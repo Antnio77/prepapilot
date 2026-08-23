@@ -81,6 +81,8 @@ interface Store extends AppState {
 
   runGeneration: () => void;
   resetDemoData: () => void;
+  /** Overwrites all domain data with a snapshot pulled from Supabase (see supabase/sync.ts). */
+  hydrateFromRemote: (state: AppState) => void;
 }
 
 const emptyState = (): AppState => ({
@@ -235,6 +237,7 @@ export const useAppStore = create<Store>()(
         }),
 
       resetDemoData: () => set({ ...buildDemoData(), activeSessionId: null }),
+      hydrateFromRemote: (remote) => set({ ...remote }),
     }),
     {
       name: "prepapilot-store-v1",

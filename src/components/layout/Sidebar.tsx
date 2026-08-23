@@ -1,13 +1,23 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { GraduationCap } from "lucide-react";
+import { usePathname, useRouter } from "next/navigation";
+import { LogOut, GraduationCap } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { NAV_ITEMS } from "./nav";
+import { isSupabaseConfigured, getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { useSupabaseUserEmail } from "@/lib/supabase/useSupabaseUser";
 
 export function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
+  const email = useSupabaseUserEmail();
+
+  async function handleSignOut() {
+    const supabase = getSupabaseBrowserClient();
+    await supabase?.auth.signOut();
+    router.replace("/login");
+  }
 
   return (
     <aside className="hidden md:flex md:w-64 md:flex-col md:fixed md:inset-y-0 border-r border-border-soft bg-surface/60 backdrop-blur-xl">
@@ -41,10 +51,27 @@ export function Sidebar() {
       </nav>
 
       <div className="px-4 py-4 border-t border-border-soft">
-        <Link href="/login" className="block rounded-xl bg-surface-hover px-3 py-2.5 hover:bg-surface-hover/70 transition-colors">
-          <p className="text-xs font-medium text-foreground">Stockage local</p>
-          <p className="text-xs text-muted mt-0.5">Tes données restent sur cet appareil</p>
-        </Link>
+        {isSupabaseConfigured && email ? (
+          <div className="rounded-xl bg-surface-hover px-3 py-2.5">
+            <p className="text-xs font-medium text-foreground truncate">{email}</p>
+            <div className="flex items-center justify-between mt-0.5">
+              <p className="text-xs text-muted">Synchronisé sur tous tes appareils</p>
+              <button
+                onClick={handleSignOut}
+                className="text-muted-foreground hover:text-foreground transition-colors cursor-pointer shrink-0 ml-2"
+                aria-label="Déconnexion"
+                title="Déconnexion"
+              >
+                <LogOut size={14} />
+              </button>
+            </div>
+          </div>
+        ) : (
+          <Link href="/login" className="block rounded-xl bg-surface-hover px-3 py-2.5 hover:bg-surface-hover/70 transition-colors">
+            <p className="text-xs font-medium text-foreground">Stockage local</p>
+            <p className="text-xs text-muted mt-0.5">Tes données restent sur cet appareil</p>
+          </Link>
+        )}
       </div>
     </aside>
   );

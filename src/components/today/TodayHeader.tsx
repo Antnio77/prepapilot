@@ -3,6 +3,7 @@
 import { formatDateLong } from "@/lib/utils";
 import { todayISO } from "@/lib/utils";
 import { RemindersToggle } from "@/components/reminders/RemindersToggle";
+import { AccountMenu } from "@/components/layout/AccountMenu";
 
 function greeting(): string {
   const h = new Date().getHours();
@@ -21,7 +22,10 @@ export function TodayHeader() {
           {greeting()}. Voici ton plan du jour.
         </h1>
       </div>
-      <RemindersToggle />
+      <div className="flex items-center gap-2 shrink-0">
+        <AccountMenu />
+        <RemindersToggle />
+      </div>
     </div>
   );
 }

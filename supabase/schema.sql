@@ -6,12 +6,11 @@
 --   uuid without depending on the `auth` schema directly.
 -- - Every table carries `user_id` + Row Level Security so each student only ever sees
 --   their own data.
--- - Columns are intentionally close to the app's local TypeScript types (src/types/index.ts)
---   so wiring real persistence later is closer to a 1:1 mapping.
+-- - Row ids are plain `text`, not `uuid`: the app generates its own short ids client-side
+--   (some fixed, like "subj-maths", some random) and syncs them as-is — using `uuid` here
+--   would reject every insert. Only `user_id` (sourced from Supabase Auth) is a real uuid.
 -- - Left ready to extend: `study_sessions.source_type`/`source_id` already generalize to any
 --   future generator (AI, premium plans, etc.), and every table has `created_at`/`updated_at`.
-
-create extension if not exists "pgcrypto";
 
 -- ---------------------------------------------------------------------------
 -- users (profile row, 1:1 with auth.users)
@@ -28,11 +27,11 @@ create table if not exists public.users (
 -- subjects
 -- ---------------------------------------------------------------------------
 create table if not exists public.subjects (
-  id uuid primary key default gen_random_uuid(),
+  id text primary key,
   user_id uuid not null references public.users (id) on delete cascade,
   name text not null,
   color_key text not null default 'autre'
-    check (color_key in ('maths', 'physique', 'chimie', 'si', 'francais', 'autre')),
+    check (color_key in ('maths', 'physique', 'chimie', 'si', 'francais', 'anglais', 'tipe', 'autre')),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -41,9 +40,9 @@ create table if not exists public.subjects (
 -- chapters
 -- ---------------------------------------------------------------------------
 create table if not exists public.chapters (
-  id uuid primary key default gen_random_uuid(),
+  id text primary key,
   user_id uuid not null references public.users (id) on delete cascade,
-  subject_id uuid not null references public.subjects (id) on delete cascade,
+  subject_id text not null references public.subjects (id) on delete cascade,
   name text not null,
   mastery smallint not null default 0 check (mastery between 0 and 100),
   difficulty smallint not null default 3 check (difficulty between 1 and 5),
@@ -57,9 +56,9 @@ create table if not exists public.chapters (
 -- schedule_events (fixed weekly timetable — cours)
 -- ---------------------------------------------------------------------------
 create table if not exists public.schedule_events (
-  id uuid primary key default gen_random_uuid(),
+  id text primary key,
   user_id uuid not null references public.users (id) on delete cascade,
-  subject_id uuid references public.subjects (id) on delete set null,
+  subject_id text references public.subjects (id) on delete set null,
   title text not null,
   day_of_week smallint not null check (day_of_week between 0 and 6), -- 0=Lundi..6=Dimanche
   start_time time not null,
@@ -72,7 +71,7 @@ create table if not exists public.schedule_events (
 -- availability (recurring weekly free blocks + one-off unavailable periods)
 -- ---------------------------------------------------------------------------
 create table if not exists public.availability (
-  id uuid primary key default gen_random_uuid(),
+  id text primary key,
   user_id uuid not null references public.users (id) on delete cascade,
   day_of_week smallint not null check (day_of_week between 0 and 6),
   start_time time not null,
@@ -81,7 +80,7 @@ create table if not exists public.availability (
 );
 
 create table if not exists public.unavailable_periods (
-  id uuid primary key default gen_random_uuid(),
+  id text primary key,
   user_id uuid not null references public.users (id) on delete cascade,
   date date not null,
   start_time time not null,
@@ -94,13 +93,13 @@ create table if not exists public.unavailable_periods (
 -- exams (DS)
 -- ---------------------------------------------------------------------------
 create table if not exists public.exams (
-  id uuid primary key default gen_random_uuid(),
+  id text primary key,
   user_id uuid not null references public.users (id) on delete cascade,
-  subject_id uuid not null references public.subjects (id) on delete cascade,
+  subject_id text not null references public.subjects (id) on delete cascade,
   name text not null,
   date date not null,
   duration integer not null default 120, -- minutes
-  chapter_ids uuid[] not null default '{}',
+  chapter_ids text[] not null default '{}',
   importance smallint not null default 3 check (importance between 1 and 5),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -110,13 +109,13 @@ create table if not exists public.exams (
 -- oral_exams (colles)
 -- ---------------------------------------------------------------------------
 create table if not exists public.oral_exams (
-  id uuid primary key default gen_random_uuid(),
+  id text primary key,
   user_id uuid not null references public.users (id) on delete cascade,
-  subject_id uuid not null references public.subjects (id) on delete cascade,
+  subject_id text not null references public.subjects (id) on delete cascade,
   date date not null,
   time time,
   theme text not null,
-  chapter_ids uuid[] not null default '{}',
+  chapter_ids text[] not null default '{}',
   importance smallint not null default 3 check (importance between 1 and 5),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -126,9 +125,9 @@ create table if not exists public.oral_exams (
 -- assignments (DM / devoirs)
 -- ---------------------------------------------------------------------------
 create table if not exists public.assignments (
-  id uuid primary key default gen_random_uuid(),
+  id text primary key,
   user_id uuid not null references public.users (id) on delete cascade,
-  subject_id uuid not null references public.subjects (id) on delete cascade,
+  subject_id text not null references public.subjects (id) on delete cascade,
   title text not null,
   due_date date not null,
   estimated_duration integer not null default 60, -- minutes
@@ -142,10 +141,10 @@ create table if not exists public.assignments (
 -- study_sessions (generated or manual work blocks)
 -- ---------------------------------------------------------------------------
 create table if not exists public.study_sessions (
-  id uuid primary key default gen_random_uuid(),
+  id text primary key,
   user_id uuid not null references public.users (id) on delete cascade,
-  subject_id uuid references public.subjects (id) on delete set null,
-  chapter_id uuid references public.chapters (id) on delete set null,
+  subject_id text references public.subjects (id) on delete set null,
+  chapter_id text references public.chapters (id) on delete set null,
   date date not null,
   start_time time not null,
   end_time time not null,
@@ -159,7 +158,7 @@ create table if not exists public.study_sessions (
   status text not null default 'a_faire' check (status in ('a_faire', 'en_cours', 'termine', 'ignore')),
   reason text default '',
   source_type text check (source_type in ('exam', 'oral', 'assignment', 'spaced')),
-  source_id uuid,
+  source_id text,
   actual_minutes integer not null default 0,
   auto boolean not null default false,
   created_at timestamptz not null default now(),
@@ -186,6 +185,7 @@ alter table public.oral_exams enable row level security;
 alter table public.assignments enable row level security;
 alter table public.study_sessions enable row level security;
 
+drop policy if exists "Users manage their own row" on public.users;
 create policy "Users manage their own row" on public.users
   for all using (auth.uid() = id) with check (auth.uid() = id);
 
@@ -199,6 +199,7 @@ begin
       'exams', 'oral_exams', 'assignments', 'study_sessions'
     ])
   loop
+    execute format('drop policy if exists "Owner full access" on public.%I;', t);
     execute format(
       'create policy "Owner full access" on public.%I for all using (auth.uid() = user_id) with check (auth.uid() = user_id);',
       t
