@@ -3,12 +3,13 @@
 import { useState } from "react";
 import { BookOpen, ChevronLeft, ChevronRight, NotebookPen, Plus, Settings2 } from "lucide-react";
 import { useAppStore } from "@/lib/store/useAppStore";
-import { addDays, formatDateShort, minutesToTime, startOfWeek, todayISO, weekDates, weekdayLabel } from "@/lib/utils";
+import { addDays, dayOfWeekFromDate, formatDateShort, fromISODate, minutesToTime, startOfWeek, todayISO, weekDates, weekdayLabel } from "@/lib/utils";
 import { subjectColorVar } from "@/lib/subjects";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { DayColumn } from "@/components/planning/DayColumn";
+import { MobileDayView } from "@/components/planning/MobileDayView";
 import { HOURS, PX_PER_HOUR } from "@/components/planning/gridMath";
 import { SessionFormModal } from "@/components/planning/SessionFormModal";
 import { CourseFormModal } from "@/components/planning/CourseFormModal";
@@ -16,12 +17,15 @@ import { ScheduleSettingsModal } from "@/components/planning/ScheduleSettingsMod
 import { GenerateButton } from "@/components/planning/GenerateButton";
 import { usePlanningDrag } from "@/components/planning/usePlanningDrag";
 import { isSlotAvailable, MIN_SESSION_MINUTES } from "@/lib/scheduling/generate";
+import { useIsMobile } from "@/lib/useIsMobile";
 import type { CourseEvent, StudySession } from "@/types";
 
 export default function PlanningPage() {
   const state = useAppStore((s) => s);
   const subjects = state.subjects;
+  const isMobile = useIsMobile();
   const [weekStart, setWeekStart] = useState(() => startOfWeek(todayISO()));
+  const [mobileDate, setMobileDate] = useState(() => todayISO());
   const [editSession, setEditSession] = useState<StudySession | null>(null);
   const [showSessionForm, setShowSessionForm] = useState(false);
   const [editCourse, setEditCourse] = useState<CourseEvent | null>(null);
@@ -34,6 +38,18 @@ export default function PlanningPage() {
   const { ghost, registerColumn, startDrag, consumeSuppressed } = usePlanningDrag();
 
   const dates = weekDates(weekStart);
+
+  function goToWeek(newWeekStart: string) {
+    setWeekStart(newWeekStart);
+    // Keep the mobile day selection on the same weekday within the new week.
+    const offset = dayOfWeekFromDate(fromISODate(mobileDate));
+    setMobileDate(addDays(newWeekStart, offset));
+  }
+
+  function goToToday() {
+    setWeekStart(startOfWeek(todayISO()));
+    setMobileDate(todayISO());
+  }
 
   function openCreateSession(dateISO: string, startTime?: string) {
     setEditSession(null);
@@ -69,51 +85,52 @@ export default function PlanningPage() {
             {formatDateShort(dates[0])} — {formatDateShort(dates[6])}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <div className="flex items-center rounded-lg border border-border bg-surface">
             <button
-              onClick={() => setWeekStart(addDays(weekStart, -7))}
+              onClick={() => goToWeek(addDays(weekStart, -7))}
               className="h-9 w-9 flex items-center justify-center text-muted hover:text-foreground cursor-pointer"
             >
               <ChevronLeft size={16} />
             </button>
-            <button
-              onClick={() => setWeekStart(startOfWeek(todayISO()))}
-              className="h-9 px-2.5 text-[13px] font-medium text-muted hover:text-foreground cursor-pointer"
-            >
+            <button onClick={goToToday} className="h-9 px-2.5 text-[13px] font-medium text-muted hover:text-foreground cursor-pointer">
               Aujourd&apos;hui
             </button>
             <button
-              onClick={() => setWeekStart(addDays(weekStart, 7))}
+              onClick={() => goToWeek(addDays(weekStart, 7))}
               className="h-9 w-9 flex items-center justify-center text-muted hover:text-foreground cursor-pointer"
             >
               <ChevronRight size={16} />
             </button>
           </div>
           <Button variant="secondary" size="sm" onClick={() => setShowSettings(true)}>
-            <Settings2 size={14} /> Réglages
+            <Settings2 size={14} /> <span className="hidden sm:inline">Réglages</span>
           </Button>
           <GenerateButton />
           <Button size="sm" onClick={() => openCreateSession(todayISO())}>
-            <Plus size={14} /> Session
+            <Plus size={14} /> <span className="hidden sm:inline">Session</span>
           </Button>
         </div>
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+        <div className="flex flex-nowrap md:flex-wrap gap-x-4 gap-y-1.5 overflow-x-auto md:overflow-visible pb-1 md:pb-0 -mx-1 px-1">
           {subjects.map((s) => (
-            <div key={s.id} className="flex items-center gap-1.5 text-xs text-muted">
-              <span className="h-2 w-2 rounded-full" style={{ background: subjectColorVar(s.colorKey) }} />
+            <div key={s.id} className="flex items-center gap-1.5 text-xs text-muted shrink-0">
+              <span className="h-2 w-2 rounded-full shrink-0" style={{ background: subjectColorVar(s.colorKey) }} />
               {s.name}
             </div>
           ))}
         </div>
-        <p className="text-xs text-muted-foreground">
+        <p className="hidden md:block text-xs text-muted-foreground">
           Clique sur un créneau libre pour ajouter un cours ou une révision. Glisse un bloc pour le déplacer, sa bordure basse pour le redimensionner.
         </p>
       </div>
 
+      {/* Desktop: full 7-day grid. Only one of these two views is ever mounted — both
+          register DayColumn refs by date for drag/resize, so having both in the DOM at
+          once (even CSS-hidden) would make the hidden one's zero-size rects win. */}
+      {!isMobile && (
       <div className="rounded-2xl border border-border-soft bg-surface overflow-hidden">
         <div className="overflow-x-auto">
           <div className="min-w-[760px]">
@@ -167,6 +184,24 @@ export default function PlanningPage() {
           </div>
         </div>
       </div>
+      )}
+
+      {/* Mobile: one day at a time. */}
+      {isMobile && (
+      <MobileDayView
+        dates={dates}
+        selectedDate={mobileDate}
+        onSelectDate={setMobileDate}
+        onEditSession={openEditSession}
+        onEditCourse={openEditCourse}
+        onEmptyClick={(dateISO, minutes) => setAddChoice({ dateISO, minutes })}
+        registerColumn={registerColumn}
+        onBlockPointerDown={startDrag}
+        consumeSuppressed={consumeSuppressed}
+        dropPreview={ghost?.preview ?? null}
+        draggingId={ghost?.block.id ?? null}
+      />
+      )}
 
       {ghost && (
         <div
