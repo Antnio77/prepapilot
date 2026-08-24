@@ -15,6 +15,8 @@ export interface Subject {
   id: string;
   name: string;
   colorKey: SubjectColorKey;
+  /** Max revision sessions the generator will place for this subject on a single day. Defaults to 3. */
+  maxSessionsPerDay: number;
   createdAt: string;
 }
 

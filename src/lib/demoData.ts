@@ -8,7 +8,7 @@ import { DEFAULT_SUBJECTS } from "@/lib/subjects";
  */
 export function buildDemoData() {
   const now = new Date().toISOString();
-  const subjects: Subject[] = DEFAULT_SUBJECTS.map((s) => ({ id: s.id, name: s.name, colorKey: s.key, createdAt: now }));
+  const subjects: Subject[] = DEFAULT_SUBJECTS.map((s) => ({ id: s.id, name: s.name, colorKey: s.key, maxSessionsPerDay: 3, createdAt: now }));
 
   return {
     subjects,

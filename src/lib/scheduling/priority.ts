@@ -24,6 +24,12 @@ export interface WorkUnit {
   windowEnd: string | null;
   /** Preferred day within the window — the allocator tries hard to honor this exactly. */
   targetDate: string | null;
+  /**
+   * When true, this unit claims the ENTIRE free time of its target day for itself (e.g. the
+   * big, uncapped consolidation block the evening before a DS) — `minutes` is a placeholder,
+   * ignored by the allocator, which sizes the session to whatever free time that day has.
+   */
+  fillWindow?: boolean;
 }
 
 const HORIZON_URGENCY_DAYS = 14;
@@ -32,6 +38,17 @@ const EPS = 0.08; // floor so a single weak factor doesn't zero out the whole sc
 function urgencyFromDueDate(daysUntil: number): number {
   if (daysUntil < 0) return 1; // overdue: treat as maximally urgent
   return clamp(1 - daysUntil / HORIZON_URGENCY_DAYS, EPS, 1);
+}
+
+/**
+ * Combines urgency with secondary factors so urgency stays the dominant driver: each extra
+ * factor only compresses the score between 50% and 100% of itself, instead of being able to
+ * zero it out the way a plain product would. A close deadline should outrank a well-mastered
+ * one even if the latter is harder or more important.
+ */
+function weightedScore(urgency: number, ...factors: number[]): number {
+  const modifier = factors.reduce((acc, f) => acc * (0.5 + 0.5 * f), 1);
+  return urgency * modifier;
 }
 
 function priorityLabel(score: number): "haute" | "moyenne" | "basse" {
@@ -114,16 +131,21 @@ export function buildWorkPool(state: AppState, fromISO: string = todayISO()): Wo
     const subject = subjectById.get(exam.subjectId);
     if (!subject) continue;
 
-    const examWindowEnd = clampISO(addDays(exam.date, -1), fromISO, exam.date);
+    // The evening before the exam ("la veille") is reserved entirely for one big, uncapped
+    // consolidation block — see the fillWindow push below. Chapters instead get their lighter,
+    // spread-out review earlier in the week, stopping the day before that reserved evening
+    // (unless the exam is tomorrow/today, in which case there's no "earlier in the week" left).
+    const examEve = clampISO(addDays(exam.date, -1), fromISO, exam.date);
+    const chapterWindowEnd = daysUntil >= 2 ? clampISO(addDays(exam.date, -2), fromISO, exam.date) : examEve;
     const chapters = exam.chapterIds.map((id) => chapterById.get(id)).filter(Boolean) as Chapter[];
     for (const chapter of chapters) {
       linkedChapterIds.add(chapter.id);
       const difficulty = clamp(chapter.difficulty / 5, EPS, 1);
       const masteryNeed = clamp((100 - chapter.mastery) / 100, EPS, 1);
-      const score = urgency * difficulty * masteryNeed * importance;
+      const score = weightedScore(urgency, difficulty, masteryNeed, importance);
       const n = sessionsNeeded(chapter, urgency);
       const minutes = sessionMinutesForChapter(chapter, urgency);
-      const targets = distributeTargets(n, fromISO, examWindowEnd);
+      const targets = distributeTargets(n, fromISO, chapterWindowEnd);
       targets.forEach((t, i) => {
         pool.push({
           subjectId: subject.id,
@@ -144,25 +166,28 @@ export function buildWorkPool(state: AppState, fromISO: string = todayISO()): Wo
       });
     }
 
-    // Dedicated consolidation session right before the exam.
-    if (daysUntil >= 1 && daysUntil <= 4) {
-      const score = urgency * importance;
-      const target = examWindowEnd;
+    // Big, uncapped consolidation block the evening before the exam — claims the whole
+    // free window that day so nothing else gets scheduled alongside it (skipped if the
+    // exam itself is today, since there's no "veille" left to schedule).
+    if (daysUntil >= 1) {
+      const eveUrgency = urgencyFromDueDate(daysBetween(fromISO, examEve));
+      const score = weightedScore(eveUrgency, importance);
       pool.push({
         subjectId: subject.id,
         chapterId: null,
         type: "preparation_ds",
         title: exam.name,
-        reason: `DS ${relativeLabel(daysUntil)} · révisions générales`,
-        minutes: 45,
+        reason: `DS ${relativeLabel(daysUntil)} · grosse révision`,
+        minutes: 60,
         priority: priorityLabel(score),
         priorityScore: score,
         sourceType: "exam",
         sourceId: exam.id,
         dueDate: exam.date,
-        windowStart: target,
-        windowEnd: clampISO(addDays(target, 1), fromISO, exam.date),
-        targetDate: target,
+        windowStart: examEve,
+        windowEnd: examEve,
+        targetDate: examEve,
+        fillWindow: true,
       });
     }
   }
@@ -185,7 +210,7 @@ export function buildWorkPool(state: AppState, fromISO: string = todayISO()): Wo
     chapters.forEach((c) => linkedChapterIds.add(c.id));
 
     if (chapters.length === 0) {
-      const score = deepUrgency * importance;
+      const score = weightedScore(deepUrgency, importance);
       pool.push({
         subjectId: subject.id,
         chapterId: null,
@@ -211,7 +236,7 @@ export function buildWorkPool(state: AppState, fromISO: string = todayISO()): Wo
         const minutes = clamp(Math.round((weights[idx] / totalWeight) * budget / 5) * 5, 15, 45);
         const difficulty = clamp(chapter.difficulty / 5, EPS, 1);
         const masteryNeed = clamp((100 - chapter.mastery) / 100, EPS, 1);
-        const score = deepUrgency * difficulty * masteryNeed * importance;
+        const score = weightedScore(deepUrgency, difficulty, masteryNeed, importance);
         pool.push({
           subjectId: subject.id,
           chapterId: chapter.id,
@@ -235,7 +260,7 @@ export function buildWorkPool(state: AppState, fromISO: string = todayISO()): Wo
     if (daysUntil >= 2) {
       const quickTarget = addDays(oral.date, -2);
       const quickUrgency = urgencyFromDueDate(daysBetween(fromISO, quickTarget));
-      const score = quickUrgency * importance * 0.6;
+      const score = weightedScore(quickUrgency, importance) * 0.6;
       pool.push({
         subjectId: subject.id,
         chapterId: null,
@@ -270,7 +295,7 @@ export function buildWorkPool(state: AppState, fromISO: string = todayISO()): Wo
     const targets = distributeTargets(chunks, windowStart, windowEnd);
     targets.forEach((t, i) => {
       const urgency = urgencyFromDueDate(daysBetween(fromISO, t.target));
-      const score = urgency * importance * (1 - i * 0.08);
+      const score = weightedScore(urgency, importance) * (1 - i * 0.08);
       pool.push({
         subjectId: subject.id,
         chapterId: null,
@@ -304,7 +329,7 @@ export function buildWorkPool(state: AppState, fromISO: string = todayISO()): Wo
     const difficulty = clamp(chapter.difficulty / 5, EPS, 1);
     const masteryNeed = clamp((100 - chapter.mastery) / 100, EPS, 1);
     const importance = 0.45; // baseline importance for non-deadline-linked review
-    const score = urgency * difficulty * masteryNeed * importance;
+    const score = weightedScore(urgency, difficulty, masteryNeed, importance);
     pool.push({
       subjectId: subject.id,
       chapterId: chapter.id,

@@ -28,8 +28,21 @@ interface TableSync<T extends { id: string }> {
 
 const subjectsSync: TableSync<Subject> = {
   table: "subjects",
-  toDb: (s, userId) => ({ id: s.id, user_id: userId, name: s.name, color_key: s.colorKey, created_at: s.createdAt }),
-  fromDb: (r) => ({ id: r.id as string, name: r.name as string, colorKey: r.color_key as Subject["colorKey"], createdAt: r.created_at as string }),
+  toDb: (s, userId) => ({
+    id: s.id,
+    user_id: userId,
+    name: s.name,
+    color_key: s.colorKey,
+    max_sessions_per_day: s.maxSessionsPerDay,
+    created_at: s.createdAt,
+  }),
+  fromDb: (r) => ({
+    id: r.id as string,
+    name: r.name as string,
+    colorKey: r.color_key as Subject["colorKey"],
+    maxSessionsPerDay: (r.max_sessions_per_day as number | null) ?? 3,
+    createdAt: r.created_at as string,
+  }),
 };
 
 const chaptersSync: TableSync<Chapter> = {

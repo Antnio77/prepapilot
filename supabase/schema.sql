@@ -32,9 +32,13 @@ create table if not exists public.subjects (
   name text not null,
   color_key text not null default 'autre'
     check (color_key in ('maths', 'physique', 'chimie', 'si', 'francais', 'anglais', 'tipe', 'autre')),
+  max_sessions_per_day smallint not null default 3,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+-- Idempotent migration for tables created before this column existed.
+alter table public.subjects add column if not exists max_sessions_per_day smallint not null default 3;
 
 -- ---------------------------------------------------------------------------
 -- chapters

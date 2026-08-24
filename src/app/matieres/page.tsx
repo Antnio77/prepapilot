@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { Plus } from "lucide-react";
+import { Minus, Plus } from "lucide-react";
 import { useAppStore } from "@/lib/store/useAppStore";
 import { subjectColorVar } from "@/lib/subjects";
+import { clamp } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -15,6 +16,7 @@ import { BookOpen } from "lucide-react";
 export default function SubjectsPage() {
   const subjects = useAppStore((s) => s.subjects);
   const chapters = useAppStore((s) => s.chapters);
+  const updateSubject = useAppStore((s) => s.updateSubject);
   const [modalSubject, setModalSubject] = useState<string | null>(null);
   const [editChapter, setEditChapter] = useState<Chapter | null>(null);
 
@@ -54,6 +56,28 @@ export default function SubjectsPage() {
                   <Plus size={16} />
                 </button>
               </CardHeader>
+              <div className="flex items-center justify-between gap-3 px-5 pt-3 text-xs text-muted-foreground">
+                <span>Max {subject.maxSessionsPerDay} révision{subject.maxSessionsPerDay > 1 ? "s" : ""}/jour</span>
+                <div className="flex items-center rounded-lg border border-border-soft">
+                  <button
+                    onClick={() => updateSubject(subject.id, { maxSessionsPerDay: clamp(subject.maxSessionsPerDay - 1, 1, 8) })}
+                    className="h-7 w-7 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-surface-hover transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                    disabled={subject.maxSessionsPerDay <= 1}
+                    aria-label="Réduire le nombre de révisions par jour"
+                  >
+                    <Minus size={12} />
+                  </button>
+                  <span className="w-5 text-center text-[13px] font-medium text-foreground tabular-nums">{subject.maxSessionsPerDay}</span>
+                  <button
+                    onClick={() => updateSubject(subject.id, { maxSessionsPerDay: clamp(subject.maxSessionsPerDay + 1, 1, 8) })}
+                    className="h-7 w-7 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-surface-hover transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                    disabled={subject.maxSessionsPerDay >= 8}
+                    aria-label="Augmenter le nombre de révisions par jour"
+                  >
+                    <Plus size={12} />
+                  </button>
+                </div>
+              </div>
               <CardContent>
                 {subjectChapters.length === 0 ? (
                   <EmptyState

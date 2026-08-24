@@ -20,13 +20,22 @@ import { DEFAULT_SUBJECTS } from "@/lib/subjects";
 import { generateSchedule, rescheduleSession } from "@/lib/scheduling/generate";
 import { uid, todayISO, clamp } from "@/lib/utils";
 
-/** Adds any canonical subject (e.g. Anglais/TIPE) a returning user's saved profile predates. */
+const DEFAULT_MAX_SESSIONS_PER_DAY = 3;
+
+/**
+ * Adds any canonical subject (e.g. Anglais/TIPE) a returning user's saved profile predates,
+ * and backfills `maxSessionsPerDay` on subjects saved before that field existed.
+ */
 function backfillDefaultSubjects(subjects: Subject[]): Subject[] {
   const existingKeys = new Set(subjects.map((s) => s.colorKey));
   const missing = DEFAULT_SUBJECTS.filter((s) => !existingKeys.has(s.key));
-  if (missing.length === 0) return subjects;
   const now = new Date().toISOString();
-  return [...subjects, ...missing.map((s) => ({ id: s.id, name: s.name, colorKey: s.key, createdAt: now }))];
+  const normalized = subjects.map((s) => ({ ...s, maxSessionsPerDay: s.maxSessionsPerDay ?? DEFAULT_MAX_SESSIONS_PER_DAY }));
+  if (missing.length === 0) return normalized;
+  return [
+    ...normalized,
+    ...missing.map((s) => ({ id: s.id, name: s.name, colorKey: s.key, maxSessionsPerDay: DEFAULT_MAX_SESSIONS_PER_DAY, createdAt: now })),
+  ];
 }
 
 interface Store extends AppState {

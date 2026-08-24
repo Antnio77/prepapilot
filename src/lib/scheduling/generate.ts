@@ -8,7 +8,7 @@ const FILL_RATIO = 0.92; // use nearly all declared availability — the user al
 const MAX_DAILY_MINUTES = 600; // sanity backstop only (10h), not a normal-use constraint
 const BREAK_MINUTES = 12;
 export const MIN_SESSION_MINUTES = 20;
-const MAX_SESSIONS_PER_SUBJECT_PER_DAY = 3;
+const DEFAULT_MAX_SESSIONS_PER_SUBJECT_PER_DAY = 3;
 
 function freeWindowsForDate(
   state: AppState,
@@ -126,9 +126,10 @@ function isEligible(unit: WorkUnit, dateISO: string): boolean {
  */
 export function generateSchedule(state: AppState): StudySession[] {
   const from = todayISO();
-  const pool = buildWorkPool(state, from).filter((u) => u.minutes >= MIN_SESSION_MINUTES);
+  const pool = buildWorkPool(state, from).filter((u) => u.fillWindow || u.minutes >= MIN_SESSION_MINUTES);
   const remaining = [...pool];
   const subjectWeekMinutes = new Map<string, number>();
+  const maxSessionsPerSubject = new Map(state.subjects.map((s) => [s.id, s.maxSessionsPerDay || DEFAULT_MAX_SESSIONS_PER_SUBJECT_PER_DAY]));
   const generated: StudySession[] = [];
 
   for (let d = 0; d < HORIZON_DAYS; d++) {
@@ -138,6 +139,20 @@ export function generateSchedule(state: AppState): StudySession[] {
     const windows = freeWindowsForDate(state, dateISO, nowMinutes);
     const dayBudget = windows.reduce((sum, w) => sum + intervalDuration(w), 0);
     if (dayBudget < MIN_SESSION_MINUTES) continue;
+
+    // A "fillWindow" unit (e.g. the big review the evening before a DS) claims every free
+    // window of the day for itself — nothing else gets scheduled alongside it.
+    const fillIdx = remaining.findIndex((u) => u.fillWindow && u.targetDate === dateISO);
+    if (fillIdx !== -1) {
+      const unit = remaining.splice(fillIdx, 1)[0];
+      for (const win of windows) {
+        const minutes = intervalDuration(win);
+        if (minutes < MIN_SESSION_MINUTES) continue;
+        generated.push(makeSession(dateISO, win.start, { ...unit, minutes }));
+        subjectWeekMinutes.set(unit.subjectId, (subjectWeekMinutes.get(unit.subjectId) ?? 0) + minutes);
+      }
+      continue;
+    }
 
     const targetFill = clamp(dayBudget * FILL_RATIO, 0, MAX_DAILY_MINUTES);
     let usedToday = 0;
@@ -158,7 +173,7 @@ export function generateSchedule(state: AppState): StudySession[] {
         let candidateIdx = pickTargetedCandidate(remaining, dateISO, remainingInWindow);
         if (candidateIdx === -1) {
           if (usedToday >= targetFill) break;
-          candidateIdx = pickBestCandidate(remaining, dateISO, remainingInWindow, subjectDayCount, subjectWeekMinutes);
+          candidateIdx = pickBestCandidate(remaining, dateISO, remainingInWindow, subjectDayCount, subjectWeekMinutes, maxSessionsPerSubject);
         }
         if (candidateIdx === -1) break;
 
@@ -215,7 +230,8 @@ function pickBestCandidate(
   dateISO: string,
   maxMinutes: number,
   subjectDayCount: Map<string, number>,
-  subjectWeekMinutes: Map<string, number>
+  subjectWeekMinutes: Map<string, number>,
+  maxSessionsPerSubject: Map<string, number>
 ): number {
   let bestIdx = -1;
   let bestScore = -Infinity;
@@ -224,7 +240,8 @@ function pickBestCandidate(
     if (!isEligible(unit, dateISO)) continue;
     if (unit.minutes > maxMinutes && maxMinutes < MIN_SESSION_MINUTES) continue;
     const dayCount = subjectDayCount.get(unit.subjectId) ?? 0;
-    if (dayCount >= MAX_SESSIONS_PER_SUBJECT_PER_DAY) continue;
+    const dayCap = maxSessionsPerSubject.get(unit.subjectId) ?? DEFAULT_MAX_SESSIONS_PER_SUBJECT_PER_DAY;
+    if (dayCount >= dayCap) continue;
     // Balance across the week: a subject that already got a lot of time this week is deprioritized.
     const weekMinutes = subjectWeekMinutes.get(unit.subjectId) ?? 0;
     const effectiveScore = unit.priorityScore / (1 + weekMinutes / 120);
