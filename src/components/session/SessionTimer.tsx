@@ -8,28 +8,18 @@ import { ProgressRing } from "@/components/ui/ProgressBar";
 import { useAppStore } from "@/lib/store/useAppStore";
 import { subjectColorVar } from "@/lib/subjects";
 import { playChime, notifyPhaseChange } from "@/lib/pomodoroFeedback";
+import { buildPomodoroPlan, type PomodoroPlan } from "@/lib/pomodoroPlan";
 import { cn } from "@/lib/utils";
 import type { StudySession } from "@/types";
 
 type Mode = "simple" | "pomodoro";
 type Phase = "focus" | "short_break" | "long_break";
 
-const FOCUS_MIN = 25;
-const SHORT_BREAK_MIN = 5;
-const LONG_BREAK_MIN = 15;
-const CYCLES_BEFORE_LONG_BREAK = 4;
-
 const PHASE_LABEL: Record<Phase, string> = {
   focus: "Focus",
   short_break: "Pause courte",
   long_break: "Pause longue",
 };
-
-function phaseDurationSeconds(phase: Phase): number {
-  if (phase === "focus") return FOCUS_MIN * 60;
-  if (phase === "long_break") return LONG_BREAK_MIN * 60;
-  return SHORT_BREAK_MIN * 60;
-}
 
 function formatClock(totalSeconds: number): string {
   const m = Math.floor(totalSeconds / 60);
@@ -46,17 +36,30 @@ interface PomoState {
   focusSeconds: number;
 }
 
-function nextPomoState(p: PomoState, mode: Mode): PomoState {
+function phaseDurationSeconds(phase: Phase, plan: PomodoroPlan): number {
+  if (phase === "focus") return plan.focusMinutes * 60;
+  if (phase === "long_break") return plan.longBreakMinutes * 60;
+  return plan.shortBreakMinutes * 60;
+}
+
+const NO_BREAK = (plan: PomodoroPlan) => plan.shortBreakMinutes === 0 && plan.longBreakMinutes === 0;
+
+function nextPomoState(p: PomoState, mode: Mode, plan: PomodoroPlan): PomoState {
   if (mode === "simple") return { ...p, focusSeconds: p.focusSeconds + 1 };
+  // A single-block plan (session too short to split) has no break: count down to 0 and hold
+  // there — still tracking focusSeconds underneath so "Terminer" captures the real elapsed time.
+  if (p.phase === "focus" && NO_BREAK(plan)) {
+    return { ...p, phaseSecondsLeft: Math.max(0, p.phaseSecondsLeft - 1), focusSeconds: p.focusSeconds + 1 };
+  }
   if (p.phaseSecondsLeft > 1) {
     return { ...p, phaseSecondsLeft: p.phaseSecondsLeft - 1, focusSeconds: p.phase === "focus" ? p.focusSeconds + 1 : p.focusSeconds };
   }
   if (p.phase === "focus") {
     const cycleCount = p.cycleCount + 1;
-    const phase: Phase = cycleCount % CYCLES_BEFORE_LONG_BREAK === 0 ? "long_break" : "short_break";
-    return { phase, phaseSecondsLeft: phaseDurationSeconds(phase), cycleCount, focusSeconds: p.focusSeconds + 1 };
+    const phase: Phase = cycleCount % plan.cyclesBeforeLongBreak === 0 ? "long_break" : "short_break";
+    return { phase, phaseSecondsLeft: phaseDurationSeconds(phase, plan), cycleCount, focusSeconds: p.focusSeconds + 1 };
   }
-  return { phase: "focus", phaseSecondsLeft: phaseDurationSeconds("focus"), cycleCount: p.cycleCount, focusSeconds: p.focusSeconds };
+  return { phase: "focus", phaseSecondsLeft: phaseDurationSeconds("focus", plan), cycleCount: p.cycleCount, focusSeconds: p.focusSeconds };
 }
 
 export function SessionTimer({ session, onClose }: { session: StudySession | null; onClose: () => void }) {
@@ -69,9 +72,10 @@ export function SessionTimer({ session, onClose }: { session: StudySession | nul
 
   // The parent keys this component by session id, so a fresh instance (and fresh
   // initial state below) is mounted whenever a different session is started.
+  const plan = buildPomodoroPlan(session?.durationMinutes ?? 25);
   const [mode, setMode] = useState<Mode>(preferredMode);
   const [running, setRunning] = useState(true);
-  const [pomo, setPomo] = useState<PomoState>(() => ({ phase: "focus", phaseSecondsLeft: phaseDurationSeconds("focus"), cycleCount: 0, focusSeconds: 0 }));
+  const [pomo, setPomo] = useState<PomoState>(() => ({ phase: "focus", phaseSecondsLeft: phaseDurationSeconds("focus", plan), cycleCount: 0, focusSeconds: 0 }));
 
   useEffect(() => {
     if (session) startSession(session.id);
@@ -80,8 +84,9 @@ export function SessionTimer({ session, onClose }: { session: StudySession | nul
 
   useEffect(() => {
     if (!running || !session) return;
-    const id = setInterval(() => setPomo((p) => nextPomoState(p, mode)), 1000);
+    const id = setInterval(() => setPomo((p) => nextPomoState(p, mode, plan)), 1000);
     return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [running, session, mode]);
 
   // Fires the chime/notification exactly once per real phase change — kept in an effect
@@ -94,15 +99,18 @@ export function SessionTimer({ session, onClose }: { session: StudySession | nul
     playChime();
     notifyPhaseChange(
       pomo.phase === "focus" ? "Focus — c'est reparti" : "Pause méritée",
-      pomo.phase === "focus" ? "Retour à la révision." : `${PHASE_LABEL[pomo.phase]} de ${pomo.phase === "long_break" ? LONG_BREAK_MIN : SHORT_BREAK_MIN} min.`
+      pomo.phase === "focus"
+        ? "Retour à la révision."
+        : `${PHASE_LABEL[pomo.phase]} de ${pomo.phase === "long_break" ? plan.longBreakMinutes : plan.shortBreakMinutes} min.`
     );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pomo.phase, mode]);
 
   function switchMode(next: Mode) {
     setMode(next);
     setPreferredMode(next);
     if (next === "pomodoro") {
-      setPomo((p) => ({ phase: "focus", phaseSecondsLeft: phaseDurationSeconds("focus"), cycleCount: 0, focusSeconds: p.focusSeconds }));
+      setPomo((p) => ({ phase: "focus", phaseSecondsLeft: phaseDurationSeconds("focus", plan), cycleCount: 0, focusSeconds: p.focusSeconds }));
     }
   }
 
@@ -110,10 +118,10 @@ export function SessionTimer({ session, onClose }: { session: StudySession | nul
     setPomo((p) => {
       if (p.phase === "focus") {
         const cycleCount = p.cycleCount + 1;
-        const phase: Phase = cycleCount % CYCLES_BEFORE_LONG_BREAK === 0 ? "long_break" : "short_break";
-        return { phase, phaseSecondsLeft: phaseDurationSeconds(phase), cycleCount, focusSeconds: p.focusSeconds };
+        const phase: Phase = cycleCount % plan.cyclesBeforeLongBreak === 0 ? "long_break" : "short_break";
+        return { phase, phaseSecondsLeft: phaseDurationSeconds(phase, plan), cycleCount, focusSeconds: p.focusSeconds };
       }
-      return { phase: "focus", phaseSecondsLeft: phaseDurationSeconds("focus"), cycleCount: p.cycleCount, focusSeconds: p.focusSeconds };
+      return { phase: "focus", phaseSecondsLeft: phaseDurationSeconds("focus", plan), cycleCount: p.cycleCount, focusSeconds: p.focusSeconds };
     });
   }
 
@@ -125,14 +133,14 @@ export function SessionTimer({ session, onClose }: { session: StudySession | nul
   const ringColor = isBreak ? "var(--success)" : color;
   const filledDots =
     pomo.phase === "focus"
-      ? pomo.cycleCount % CYCLES_BEFORE_LONG_BREAK
-      : pomo.cycleCount % CYCLES_BEFORE_LONG_BREAK === 0
-        ? CYCLES_BEFORE_LONG_BREAK
-        : pomo.cycleCount % CYCLES_BEFORE_LONG_BREAK;
+      ? pomo.cycleCount % plan.cyclesBeforeLongBreak
+      : pomo.cycleCount % plan.cyclesBeforeLongBreak === 0
+        ? plan.cyclesBeforeLongBreak
+        : pomo.cycleCount % plan.cyclesBeforeLongBreak;
   const pct =
     mode === "simple"
       ? Math.min(100, (pomo.focusSeconds / (session.durationMinutes * 60)) * 100)
-      : ((phaseDurationSeconds(pomo.phase) - pomo.phaseSecondsLeft) / phaseDurationSeconds(pomo.phase)) * 100;
+      : ((phaseDurationSeconds(pomo.phase, plan) - pomo.phaseSecondsLeft) / phaseDurationSeconds(pomo.phase, plan)) * 100;
 
   function finish() {
     if (!session) return;
@@ -185,11 +193,13 @@ export function SessionTimer({ session, onClose }: { session: StudySession | nul
       {mode === "pomodoro" && (
         <div className="flex items-center justify-center gap-2 mt-2">
           <Badge isBreak={isBreak} />
-          <div className="flex items-center gap-1">
-            {Array.from({ length: CYCLES_BEFORE_LONG_BREAK }, (_, i) => (
-              <span key={i} className="h-1.5 w-1.5 rounded-full" style={{ background: i < filledDots ? "var(--accent)" : "var(--border)" }} />
-            ))}
-          </div>
+          {plan.cyclesBeforeLongBreak > 1 && (
+            <div className="flex items-center gap-1">
+              {Array.from({ length: plan.cyclesBeforeLongBreak }, (_, i) => (
+                <span key={i} className="h-1.5 w-1.5 rounded-full" style={{ background: i < filledDots ? "var(--accent)" : "var(--border)" }} />
+              ))}
+            </div>
+          )}
         </div>
       )}
 
