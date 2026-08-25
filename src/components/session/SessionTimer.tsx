@@ -1,25 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { Coffee, Pause, Play, SkipForward, Square, Target, X } from "lucide-react";
+import { Coffee, Minimize2, Pause, Play, SkipForward, Square, Target } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { ProgressRing } from "@/components/ui/ProgressBar";
-import { useAppStore } from "@/lib/store/useAppStore";
 import { subjectColorVar } from "@/lib/subjects";
-import { playChime, notifyPhaseChange } from "@/lib/pomodoroFeedback";
-import { buildPomodoroPlan, type PomodoroPlan } from "@/lib/pomodoroPlan";
+import type { SessionTimerEngine } from "@/lib/session/useSessionTimerEngine";
 import { cn } from "@/lib/utils";
-import type { StudySession } from "@/types";
-
-type Mode = "simple" | "pomodoro";
-type Phase = "focus" | "short_break" | "long_break";
-
-const PHASE_LABEL: Record<Phase, string> = {
-  focus: "Focus",
-  short_break: "Pause courte",
-  long_break: "Pause longue",
-};
 
 function formatClock(totalSeconds: number): string {
   const m = Math.floor(totalSeconds / 60);
@@ -27,107 +14,16 @@ function formatClock(totalSeconds: number): string {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-interface PomoState {
-  phase: Phase;
-  phaseSecondsLeft: number;
-  cycleCount: number;
-  /** Time actually spent focused — counts up in "simple" mode, and only during focus
-   *  phases in "pomodoro" mode. This is what becomes the session's `actualMinutes`. */
-  focusSeconds: number;
-}
-
-function phaseDurationSeconds(phase: Phase, plan: PomodoroPlan): number {
-  if (phase === "focus") return plan.focusMinutes * 60;
-  if (phase === "long_break") return plan.longBreakMinutes * 60;
-  return plan.shortBreakMinutes * 60;
-}
-
-const NO_BREAK = (plan: PomodoroPlan) => plan.shortBreakMinutes === 0 && plan.longBreakMinutes === 0;
-
-function nextPomoState(p: PomoState, mode: Mode, plan: PomodoroPlan): PomoState {
-  if (mode === "simple") return { ...p, focusSeconds: p.focusSeconds + 1 };
-  // A single-block plan (session too short to split) has no break: count down to 0 and hold
-  // there — still tracking focusSeconds underneath so "Terminer" captures the real elapsed time.
-  if (p.phase === "focus" && NO_BREAK(plan)) {
-    return { ...p, phaseSecondsLeft: Math.max(0, p.phaseSecondsLeft - 1), focusSeconds: p.focusSeconds + 1 };
-  }
-  if (p.phaseSecondsLeft > 1) {
-    return { ...p, phaseSecondsLeft: p.phaseSecondsLeft - 1, focusSeconds: p.phase === "focus" ? p.focusSeconds + 1 : p.focusSeconds };
-  }
-  if (p.phase === "focus") {
-    const cycleCount = p.cycleCount + 1;
-    const phase: Phase = cycleCount % plan.cyclesBeforeLongBreak === 0 ? "long_break" : "short_break";
-    return { phase, phaseSecondsLeft: phaseDurationSeconds(phase, plan), cycleCount, focusSeconds: p.focusSeconds + 1 };
-  }
-  return { phase: "focus", phaseSecondsLeft: phaseDurationSeconds("focus", plan), cycleCount: p.cycleCount, focusSeconds: p.focusSeconds };
-}
-
-export function SessionTimer({ session, onClose }: { session: StudySession | null; onClose: () => void }) {
-  const subjects = useAppStore((s) => s.subjects);
-  const startSession = useAppStore((s) => s.startSession);
-  const completeSession = useAppStore((s) => s.completeSession);
-  const setSessionStatus = useAppStore((s) => s.setSessionStatus);
-  const preferredMode = useAppStore((s) => s.preferredTimerMode);
-  const setPreferredMode = useAppStore((s) => s.setPreferredTimerMode);
-
-  // The parent keys this component by session id, so a fresh instance (and fresh
-  // initial state below) is mounted whenever a different session is started.
-  const plan = buildPomodoroPlan(session?.durationMinutes ?? 25);
-  const [mode, setMode] = useState<Mode>(preferredMode);
-  const [running, setRunning] = useState(true);
-  const [pomo, setPomo] = useState<PomoState>(() => ({ phase: "focus", phaseSecondsLeft: phaseDurationSeconds("focus", plan), cycleCount: 0, focusSeconds: 0 }));
-
-  useEffect(() => {
-    if (session) startSession(session.id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    if (!running || !session) return;
-    const id = setInterval(() => setPomo((p) => nextPomoState(p, mode, plan)), 1000);
-    return () => clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [running, session, mode]);
-
-  // Fires the chime/notification exactly once per real phase change — kept in an effect
-  // (not inside the reducer above) so it can never run twice from React's dev double-invoke.
-  const prevPhaseRef = useRef(pomo.phase);
-  useEffect(() => {
-    if (pomo.phase === prevPhaseRef.current) return;
-    prevPhaseRef.current = pomo.phase;
-    if (mode !== "pomodoro") return;
-    playChime();
-    notifyPhaseChange(
-      pomo.phase === "focus" ? "Focus — c'est reparti" : "Pause méritée",
-      pomo.phase === "focus"
-        ? "Retour à la révision."
-        : `${PHASE_LABEL[pomo.phase]} de ${pomo.phase === "long_break" ? plan.longBreakMinutes : plan.shortBreakMinutes} min.`
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pomo.phase, mode]);
-
-  function switchMode(next: Mode) {
-    setMode(next);
-    setPreferredMode(next);
-    if (next === "pomodoro") {
-      setPomo((p) => ({ phase: "focus", phaseSecondsLeft: phaseDurationSeconds("focus", plan), cycleCount: 0, focusSeconds: p.focusSeconds }));
-    }
-  }
-
-  function skipPhase() {
-    setPomo((p) => {
-      if (p.phase === "focus") {
-        const cycleCount = p.cycleCount + 1;
-        const phase: Phase = cycleCount % plan.cyclesBeforeLongBreak === 0 ? "long_break" : "short_break";
-        return { phase, phaseSecondsLeft: phaseDurationSeconds(phase, plan), cycleCount, focusSeconds: p.focusSeconds };
-      }
-      return { phase: "focus", phaseSecondsLeft: phaseDurationSeconds("focus", plan), cycleCount: p.cycleCount, focusSeconds: p.focusSeconds };
-    });
-  }
-
+/**
+ * The expanded timer view. Purely presentational — all state lives in useSessionTimerEngine,
+ * mounted once at the app shell level, so closing/collapsing this modal (to go look at the
+ * Planning page, say) never stops the countdown underneath. Only "Terminer" or "Abandonner"
+ * actually end the session.
+ */
+export function SessionTimer({ engine, onCollapse }: { engine: SessionTimerEngine; onCollapse: () => void }) {
+  const { session, subject, mode, running, pomo, plan, switchMode, toggleRunning, skipPhase, finish, abandon } = engine;
   if (!session) return null;
 
-  const subject = subjects.find((s) => s.id === session.subjectId);
   const color = subject ? subjectColorVar(subject.colorKey) : "var(--accent)";
   const isBreak = mode === "pomodoro" && pomo.phase !== "focus";
   const ringColor = isBreak ? "var(--success)" : color;
@@ -137,31 +33,35 @@ export function SessionTimer({ session, onClose }: { session: StudySession | nul
       : pomo.cycleCount % plan.cyclesBeforeLongBreak === 0
         ? plan.cyclesBeforeLongBreak
         : pomo.cycleCount % plan.cyclesBeforeLongBreak;
+
+  function phaseDurationSeconds(phase: typeof pomo.phase): number {
+    if (phase === "focus") return plan.focusMinutes * 60;
+    if (phase === "long_break") return plan.longBreakMinutes * 60;
+    return plan.shortBreakMinutes * 60;
+  }
+
   const pct =
     mode === "simple"
       ? Math.min(100, (pomo.focusSeconds / (session.durationMinutes * 60)) * 100)
-      : ((phaseDurationSeconds(pomo.phase, plan) - pomo.phaseSecondsLeft) / phaseDurationSeconds(pomo.phase, plan)) * 100;
+      : ((phaseDurationSeconds(pomo.phase) - pomo.phaseSecondsLeft) / phaseDurationSeconds(pomo.phase)) * 100;
 
-  function finish() {
-    if (!session) return;
-    completeSession(session.id, Math.max(1, Math.round(pomo.focusSeconds / 60)));
-    onClose();
+  function handleFinish() {
+    finish();
   }
 
-  function abandon() {
-    if (!session) return;
-    setSessionStatus(session.id, "a_faire");
-    onClose();
+  function handleAbandon() {
+    abandon();
   }
 
   return (
-    <Modal open={Boolean(session)} onClose={abandon} className="text-center">
+    <Modal open={Boolean(session)} onClose={onCollapse} className="text-center">
       <button
-        onClick={abandon}
+        onClick={onCollapse}
         className="absolute right-4 top-4 h-8 w-8 flex items-center justify-center rounded-lg text-muted hover:bg-surface-hover cursor-pointer"
-        aria-label="Fermer"
+        aria-label="Réduire (le minuteur continue en arrière-plan)"
+        title="Réduire — le minuteur continue"
       >
-        <X size={18} />
+        <Minimize2 size={16} />
       </button>
 
       <div className="flex justify-center gap-1 mt-2 mb-1 bg-surface-hover rounded-lg p-1 w-fit mx-auto">
@@ -223,7 +123,7 @@ export function SessionTimer({ session, onClose }: { session: StudySession | nul
       </div>
 
       <div className="flex items-center justify-center gap-3">
-        <Button variant="secondary" size="lg" onClick={() => setRunning((r) => !r)} className="w-32">
+        <Button variant="secondary" size="lg" onClick={toggleRunning} className="w-32">
           {running ? (
             <>
               <Pause size={16} /> Pause
@@ -239,17 +139,17 @@ export function SessionTimer({ session, onClose }: { session: StudySession | nul
             <SkipForward size={15} /> Passer
           </Button>
         ) : (
-          <Button size="lg" onClick={finish} className="w-40">
+          <Button size="lg" onClick={handleFinish} className="w-40">
             <Square size={14} fill="currentColor" /> Terminer
           </Button>
         )}
       </div>
       {mode === "pomodoro" && (
-        <Button size="lg" onClick={finish} className="w-full mt-3">
+        <Button size="lg" onClick={handleFinish} className="w-full mt-3">
           <Square size={14} fill="currentColor" /> Terminer la session
         </Button>
       )}
-      <button onClick={abandon} className="text-xs text-muted-foreground mt-5 hover:text-foreground transition-colors cursor-pointer">
+      <button onClick={handleAbandon} className="text-xs text-muted-foreground mt-5 hover:text-foreground transition-colors cursor-pointer">
         Abandonner la session
       </button>
     </Modal>

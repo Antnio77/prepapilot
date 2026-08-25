@@ -8,6 +8,7 @@ import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { Sidebar } from "./Sidebar";
 import { MobileNav } from "./MobileNav";
 import { ReminderEngine } from "@/components/reminders/ReminderEngine";
+import { GlobalSessionTimer } from "@/components/session/GlobalSessionTimer";
 import { GraduationCap } from "lucide-react";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -51,6 +52,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <main className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8 pb-24 md:pb-16 pt-6 md:pt-8">{children}</main>
       </div>
       <MobileNav />
+      <GlobalSessionTimer />
     </div>
   );
 }
