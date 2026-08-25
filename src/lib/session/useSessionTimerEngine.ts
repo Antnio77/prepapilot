@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useAppStore } from "@/lib/store/useAppStore";
 import { buildPomodoroPlan, type PomodoroPlan } from "@/lib/pomodoroPlan";
 import { playChime, notifyPhaseChange } from "@/lib/pomodoroFeedback";
+import { clamp, timeToMinutes, todayISO } from "@/lib/utils";
 
 export type TimerMode = "simple" | "pomodoro";
 export type TimerPhase = "focus" | "short_break" | "long_break";
@@ -53,6 +54,9 @@ function initialPomoState(plan: PomodoroPlan): PomoState {
   return { phase: "focus", phaseSecondsLeft: phaseDurationSeconds("focus", plan), cycleCount: 0, focusSeconds: 0 };
 }
 
+/** Floor so recalibrating when already past (or seconds from) the planned end doesn't zero out. */
+const MIN_RECALIBRATE_MINUTES = 5;
+
 /**
  * The single, app-wide timer engine — mounted once in AppShell (outside the routed page
  * content) so navigating between pages never tears it down. Whichever page previously owned
@@ -71,13 +75,17 @@ export function useSessionTimerEngine() {
 
   const session = useMemo(() => studySessions.find((s) => s.id === activeSessionId) ?? null, [studySessions, activeSessionId]);
   const subject = useMemo(() => subjects.find((s) => s.id === session?.subjectId) ?? null, [subjects, session]);
-  const plan = useMemo(() => buildPomodoroPlan(session?.durationMinutes ?? 25), [session?.durationMinutes]);
 
   // The caller (GlobalSessionTimer) keys its host component by activeSessionId, so this hook
   // is only ever mounted fresh for a given session — these initializers run once per session,
   // no reset-on-change effect needed.
   const [mode, setMode] = useState<TimerMode>(preferredMode);
   const [running, setRunning] = useState(true);
+  // How many minutes the timer is currently structured around — starts as the session's own
+  // planned duration, but "recalibrate" can shrink it to whatever's left until the session's
+  // scheduled end time, so a late start doesn't cascade into every session after it.
+  const [targetMinutes, setTargetMinutes] = useState(session?.durationMinutes ?? 25);
+  const plan = useMemo(() => buildPomodoroPlan(targetMinutes), [targetMinutes]);
   const [pomo, setPomo] = useState<PomoState>(() => initialPomoState(plan));
 
   useEffect(() => {
@@ -135,7 +143,23 @@ export function useSessionTimerEngine() {
     setSessionStatus(session.id, "a_faire");
   }
 
-  return { session, subject, mode, running, pomo, plan, switchMode, toggleRunning, skipPhase, finish, abandon };
+  // Only meaningful for a session scheduled today: shrinks the remaining focus/break
+  // structure to whatever time is actually left before the planned end time, so a late
+  // start doesn't push every session after it later too. Explicit, user-triggered only —
+  // never happens automatically.
+  const canRecalibrate = Boolean(session && session.date === todayISO());
+
+  function recalibrate() {
+    if (!session || !canRecalibrate) return;
+    const nowMinutes = new Date().getHours() * 60 + new Date().getMinutes();
+    const endMinutes = timeToMinutes(session.endTime);
+    const remaining = clamp(endMinutes - nowMinutes, MIN_RECALIBRATE_MINUTES, session.durationMinutes);
+    const newPlan = buildPomodoroPlan(remaining);
+    setTargetMinutes(remaining);
+    setPomo((p) => ({ phase: "focus", phaseSecondsLeft: phaseDurationSeconds("focus", newPlan), cycleCount: 0, focusSeconds: p.focusSeconds }));
+  }
+
+  return { session, subject, mode, running, pomo, plan, targetMinutes, canRecalibrate, switchMode, toggleRunning, skipPhase, finish, abandon, recalibrate };
 }
 
 export type SessionTimerEngine = ReturnType<typeof useSessionTimerEngine>;

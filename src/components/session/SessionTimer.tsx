@@ -1,6 +1,6 @@
 "use client";
 
-import { Coffee, Minimize2, Pause, Play, SkipForward, Square, Target } from "lucide-react";
+import { Coffee, Minimize2, Pause, Play, SkipForward, Square, Target, TimerReset } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { ProgressRing } from "@/components/ui/ProgressBar";
@@ -21,7 +21,8 @@ function formatClock(totalSeconds: number): string {
  * actually end the session.
  */
 export function SessionTimer({ engine, onCollapse }: { engine: SessionTimerEngine; onCollapse: () => void }) {
-  const { session, subject, mode, running, pomo, plan, switchMode, toggleRunning, skipPhase, finish, abandon } = engine;
+  const { session, subject, mode, running, pomo, plan, targetMinutes, canRecalibrate, switchMode, toggleRunning, skipPhase, finish, abandon, recalibrate } =
+    engine;
   if (!session) return null;
 
   const color = subject ? subjectColorVar(subject.colorKey) : "var(--accent)";
@@ -42,7 +43,7 @@ export function SessionTimer({ engine, onCollapse }: { engine: SessionTimerEngin
 
   const pct =
     mode === "simple"
-      ? Math.min(100, (pomo.focusSeconds / (session.durationMinutes * 60)) * 100)
+      ? Math.min(100, (pomo.focusSeconds / (targetMinutes * 60)) * 100)
       : ((phaseDurationSeconds(pomo.phase) - pomo.phaseSecondsLeft) / phaseDurationSeconds(pomo.phase)) * 100;
 
   function handleFinish() {
@@ -103,6 +104,17 @@ export function SessionTimer({ engine, onCollapse }: { engine: SessionTimerEngin
         </div>
       )}
 
+      {canRecalibrate && (
+        <button
+          onClick={recalibrate}
+          className="mx-auto mt-3 flex items-center gap-1.5 rounded-full border border-border-soft px-3 py-1 text-[12px] font-medium text-muted-foreground hover:text-foreground hover:bg-surface-hover transition-colors cursor-pointer"
+          title={`Recale ce qu'il reste pour finir à l'heure prévue (${session.endTime})`}
+        >
+          <TimerReset size={13} />
+          Recaler sur {session.endTime}
+        </button>
+      )}
+
       <div className="flex justify-center my-6">
         <ProgressRing
           value={pct}
@@ -115,7 +127,7 @@ export function SessionTimer({ engine, onCollapse }: { engine: SessionTimerEngin
                 {mode === "simple" ? formatClock(pomo.focusSeconds) : formatClock(pomo.phaseSecondsLeft)}
               </span>
               <span className="text-xs text-muted mt-1">
-                {mode === "simple" ? `objectif ${session.durationMinutes} min` : `${Math.round(pomo.focusSeconds / 60)} min de focus`}
+                {mode === "simple" ? `objectif ${targetMinutes} min` : `${Math.round(pomo.focusSeconds / 60)} min de focus`}
               </span>
             </div>
           }
