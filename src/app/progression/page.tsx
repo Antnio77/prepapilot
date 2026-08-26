@@ -6,6 +6,7 @@ import { WeekStatCards } from "@/components/progress/WeekStatCards";
 import { SubjectTimeChart } from "@/components/progress/SubjectTimeChart";
 import { MasteryChart } from "@/components/progress/MasteryChart";
 import { WeakestChapters } from "@/components/progress/WeakestChapters";
+import { GradesSection } from "@/components/grades/GradesSection";
 
 export default function ProgressPage() {
   const state = useAppStore((s) => s);
@@ -31,6 +32,8 @@ export default function ProgressPage() {
       </div>
 
       <WeakestChapters />
+
+      <GradesSection />
     </div>
   );
 }

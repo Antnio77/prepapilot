@@ -142,6 +142,22 @@ create table if not exists public.assignments (
 );
 
 -- ---------------------------------------------------------------------------
+-- grades (DS and colle marks, out of 20)
+-- ---------------------------------------------------------------------------
+create table if not exists public.grades (
+  id text primary key,
+  user_id uuid not null references public.users (id) on delete cascade,
+  subject_id text not null references public.subjects (id) on delete cascade,
+  kind text not null check (kind in ('ds', 'colle')),
+  label text not null default '',
+  value numeric not null check (value between 0 and 20),
+  coefficient numeric not null default 1,
+  date date not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- ---------------------------------------------------------------------------
 -- study_sessions (generated or manual work blocks)
 -- ---------------------------------------------------------------------------
 create table if not exists public.study_sessions (
@@ -174,6 +190,7 @@ create index if not exists chapters_subject_idx on public.chapters (subject_id);
 create index if not exists exams_user_date_idx on public.exams (user_id, date);
 create index if not exists oral_exams_user_date_idx on public.oral_exams (user_id, date);
 create index if not exists assignments_user_due_idx on public.assignments (user_id, due_date);
+create index if not exists grades_user_subject_idx on public.grades (user_id, subject_id);
 
 -- ---------------------------------------------------------------------------
 -- Row Level Security — every table is scoped to the authenticated owner
@@ -188,6 +205,7 @@ alter table public.exams enable row level security;
 alter table public.oral_exams enable row level security;
 alter table public.assignments enable row level security;
 alter table public.study_sessions enable row level security;
+alter table public.grades enable row level security;
 
 drop policy if exists "Users manage their own row" on public.users;
 create policy "Users manage their own row" on public.users
@@ -200,7 +218,7 @@ begin
   for t in
     select unnest(array[
       'subjects', 'chapters', 'schedule_events', 'availability', 'unavailable_periods',
-      'exams', 'oral_exams', 'assignments', 'study_sessions'
+      'exams', 'oral_exams', 'assignments', 'study_sessions', 'grades'
     ])
   loop
     execute format('drop policy if exists "Owner full access" on public.%I;', t);

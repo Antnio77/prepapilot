@@ -9,6 +9,7 @@ import type {
   Chapter,
   CourseEvent,
   Exam,
+  Grade,
   OralExam,
   SessionStatus,
   StudySession,
@@ -80,6 +81,11 @@ interface Store extends AppState {
   deleteAssignment: (id: string) => void;
   toggleAssignmentDone: (id: string) => void;
 
+  // grades
+  addGrade: (g: Omit<Grade, "id" | "createdAt">) => void;
+  updateGrade: (id: string, patch: Partial<Grade>) => void;
+  deleteGrade: (id: string) => void;
+
   // study sessions
   addStudySession: (s: Omit<StudySession, "id" | "createdAt" | "actualMinutes" | "auto" | "status" | "priorityScore"> & Partial<Pick<StudySession, "status" | "priorityScore">>) => void;
   updateStudySession: (id: string, patch: Partial<StudySession>) => void;
@@ -104,6 +110,7 @@ const emptyState = (): AppState => ({
   oralExams: [],
   assignments: [],
   studySessions: [],
+  grades: [],
   lastGeneratedAt: null,
 });
 
@@ -168,6 +175,12 @@ export const useAppStore = create<Store>()(
         set((state) => ({
           assignments: state.assignments.map((a) => (a.id === id ? { ...a, done: !a.done } : a)),
         })),
+
+      addGrade: (g) =>
+        set((state) => ({ grades: [...state.grades, { ...g, id: uid(), createdAt: new Date().toISOString() }] })),
+      updateGrade: (id, patch) =>
+        set((state) => ({ grades: state.grades.map((g) => (g.id === id ? { ...g, ...patch } : g)) })),
+      deleteGrade: (id) => set((state) => ({ grades: state.grades.filter((g) => g.id !== id) })),
 
       addStudySession: (s) =>
         set((state) => ({

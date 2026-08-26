@@ -87,6 +87,21 @@ export interface Assignment {
   done: boolean;
 }
 
+export type GradeKind = "ds" | "colle";
+
+export interface Grade {
+  id: string;
+  subjectId: string;
+  kind: GradeKind;
+  /** Free-text label, e.g. "DS 3 — Intégrales" or "Colle n°2". */
+  label: string;
+  /** Out of 20, the standard French grading scale. */
+  value: number;
+  coefficient: number;
+  date: string; // ISO date
+  createdAt: string;
+}
+
 export type SessionType =
   | "cours"
   | "exercices"
@@ -134,5 +149,6 @@ export interface AppState {
   oralExams: OralExam[];
   assignments: Assignment[];
   studySessions: StudySession[];
+  grades: Grade[];
   lastGeneratedAt: string | null;
 }

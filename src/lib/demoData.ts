@@ -20,6 +20,7 @@ export function buildDemoData() {
     oralExams: [],
     assignments: [],
     studySessions: [],
+    grades: [],
     lastGeneratedAt: null as string | null,
   };
 }
