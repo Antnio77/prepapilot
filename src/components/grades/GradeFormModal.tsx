@@ -36,6 +36,8 @@ export function GradeFormModal({
   const [value, setValue] = useState(grade?.value ?? 10);
   const [coefficient, setCoefficient] = useState(grade?.coefficient ?? 1);
   const [date, setDate] = useState(grade?.date ?? todayISO());
+  const [rank, setRank] = useState<string>(grade?.rank != null ? String(grade.rank) : "");
+  const [classAverage, setClassAverage] = useState<string>(grade?.classAverage != null ? String(grade.classAverage) : "");
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -46,6 +48,9 @@ export function GradeFormModal({
       value,
       coefficient,
       date,
+      // Rank and class average only make sense for a DS (a colle is one-on-one, no ranking).
+      rank: kind === "ds" && rank.trim() !== "" ? Number(rank) : null,
+      classAverage: kind === "ds" && classAverage.trim() !== "" ? Number(classAverage) : null,
     };
     if (grade) updateGrade(grade.id, payload);
     else addGrade(payload);
@@ -128,6 +133,34 @@ export function GradeFormModal({
             <Label>Date</Label>
             <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
           </div>
+
+          {kind === "ds" && (
+            <FieldRow>
+              <div>
+                <Label>Rang (optionnel)</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={rank}
+                  onChange={(e) => setRank(e.target.value)}
+                  placeholder="Ex : 5"
+                />
+              </div>
+              <div>
+                <Label>Moyenne classe (optionnel)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  max={20}
+                  step="any"
+                  value={classAverage}
+                  onChange={(e) => setClassAverage(e.target.value)}
+                  placeholder="Ex : 11.5"
+                />
+              </div>
+            </FieldRow>
+          )}
         </FieldGroup>
 
         <div className="flex items-center justify-between mt-6">

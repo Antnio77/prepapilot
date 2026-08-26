@@ -1,5 +1,5 @@
 import type { AppState, Chapter, StudySession } from "@/types";
-import { addDays, daysBetween, startOfWeek, todayISO } from "@/lib/utils";
+import { addDays, daysBetween, todayISO } from "@/lib/utils";
 import { recommendedReviewInterval } from "@/lib/scheduling/priority";
 
 export function nextReviewDate(chapter: Chapter): string {
@@ -79,28 +79,5 @@ export function dayProgress(state: AppState, dateISO: string) {
     totalCount: sessions.length,
     doneCount,
     pct: sessions.length === 0 ? 0 : Math.round((doneCount / sessions.length) * 100),
-  };
-}
-
-export function currentWeekStats(state: AppState) {
-  const monday = startOfWeek(todayISO());
-  const inWeek = state.studySessions.filter((s) => s.date >= monday && s.type !== "pause");
-  const done = inWeek.filter((s) => s.status === "termine");
-  const plannedMinutes = inWeek.reduce((sum, s) => sum + s.durationMinutes, 0);
-  const workedMinutes = done.reduce((sum, s) => sum + (s.actualMinutes || s.durationMinutes), 0);
-
-  const bySubject = new Map<string, number>();
-  for (const s of done) {
-    if (!s.subjectId) continue;
-    bySubject.set(s.subjectId, (bySubject.get(s.subjectId) ?? 0) + (s.actualMinutes || s.durationMinutes));
-  }
-
-  return {
-    plannedCount: inWeek.length,
-    doneCount: done.length,
-    plannedMinutes,
-    workedMinutes,
-    completionRate: inWeek.length === 0 ? 0 : Math.round((done.length / inWeek.length) * 100),
-    minutesBySubject: bySubject,
   };
 }

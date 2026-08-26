@@ -98,6 +98,10 @@ export interface Grade {
   /** Out of 20, the standard French grading scale. */
   value: number;
   coefficient: number;
+  /** Class rank for this DS (e.g. 5 = 5th). Only meaningful for kind "ds". */
+  rank: number | null;
+  /** The class's average for this DS, out of 20. Only meaningful for kind "ds". */
+  classAverage: number | null;
   date: string; // ISO date
   createdAt: string;
 }

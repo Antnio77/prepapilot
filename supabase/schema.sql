@@ -152,10 +152,16 @@ create table if not exists public.grades (
   label text not null default '',
   value numeric not null check (value between 0 and 20),
   coefficient numeric not null default 1,
+  rank smallint,
+  class_average numeric check (class_average is null or class_average between 0 and 20),
   date date not null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+-- Idempotent migration for tables created before these columns existed.
+alter table public.grades add column if not exists rank smallint;
+alter table public.grades add column if not exists class_average numeric;
 
 -- ---------------------------------------------------------------------------
 -- study_sessions (generated or manual work blocks)

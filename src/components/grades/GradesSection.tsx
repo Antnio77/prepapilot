@@ -93,6 +93,8 @@ export function GradesSection() {
                           <p className="text-xs text-muted mt-0.5">
                             {formatDateShort(g.date)}
                             {g.coefficient !== 1 && ` · coef. ${g.coefficient}`}
+                            {g.rank != null && ` · rang ${g.rank}`}
+                            {g.classAverage != null && ` · classe ${g.classAverage}/20`}
                           </p>
                         </div>
                         <span className="text-sm font-semibold tabular-nums shrink-0" style={{ color: averageColor(g.value) }}>
