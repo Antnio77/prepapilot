@@ -13,6 +13,7 @@ import type { SessionType, StudySession } from "@/types";
 const TYPE_OPTIONS: { value: SessionType; label: string }[] = [
   { value: "exercices", label: "Exercices" },
   { value: "revision", label: "Révision de cours" },
+  { value: "relecture", label: "Relecture du cours" },
   { value: "preparation_ds", label: "Préparation DS" },
   { value: "preparation_colle", label: "Préparation colle" },
   { value: "devoir", label: "DM" },

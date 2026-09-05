@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Minus, Plus } from "lucide-react";
 import { useAppStore } from "@/lib/store/useAppStore";
 import { subjectColorVar } from "@/lib/subjects";
-import { clamp } from "@/lib/utils";
+import { clamp, cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -77,6 +77,26 @@ export default function SubjectsPage() {
                     <Plus size={12} />
                   </button>
                 </div>
+              </div>
+              <div className="flex items-center justify-between gap-3 px-5 pt-2 text-xs text-muted-foreground">
+                <span>Relecture du cours le soir même</span>
+                <button
+                  role="switch"
+                  aria-checked={subject.dailyReview}
+                  onClick={() => updateSubject(subject.id, { dailyReview: !subject.dailyReview })}
+                  className={cn(
+                    "relative h-5 w-9 shrink-0 rounded-full transition-colors cursor-pointer",
+                    subject.dailyReview ? "bg-accent" : "bg-border"
+                  )}
+                  aria-label="Activer la relecture du cours le soir même"
+                >
+                  <span
+                    className={cn(
+                      "absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform",
+                      subject.dailyReview ? "translate-x-[18px]" : "translate-x-0.5"
+                    )}
+                  />
+                </button>
               </div>
               <CardContent>
                 {subjectChapters.length === 0 ? (

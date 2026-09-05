@@ -17,7 +17,7 @@ import type {
   UnavailablePeriod,
 } from "@/types";
 import { buildDemoData } from "@/lib/demoData";
-import { DEFAULT_SUBJECTS } from "@/lib/subjects";
+import { DEFAULT_SUBJECTS, defaultDailyReviewFor } from "@/lib/subjects";
 import { generateSchedule, rescheduleSession } from "@/lib/scheduling/generate";
 import { uid, todayISO, clamp } from "@/lib/utils";
 
@@ -25,17 +25,28 @@ const DEFAULT_MAX_SESSIONS_PER_DAY = 3;
 
 /**
  * Adds any canonical subject (e.g. Anglais/TIPE) a returning user's saved profile predates,
- * and backfills `maxSessionsPerDay` on subjects saved before that field existed.
+ * and backfills `maxSessionsPerDay` / `dailyReview` on subjects saved before those fields existed.
  */
 function backfillDefaultSubjects(subjects: Subject[]): Subject[] {
   const existingKeys = new Set(subjects.map((s) => s.colorKey));
   const missing = DEFAULT_SUBJECTS.filter((s) => !existingKeys.has(s.key));
   const now = new Date().toISOString();
-  const normalized = subjects.map((s) => ({ ...s, maxSessionsPerDay: s.maxSessionsPerDay ?? DEFAULT_MAX_SESSIONS_PER_DAY }));
+  const normalized = subjects.map((s) => ({
+    ...s,
+    maxSessionsPerDay: s.maxSessionsPerDay ?? DEFAULT_MAX_SESSIONS_PER_DAY,
+    dailyReview: s.dailyReview ?? defaultDailyReviewFor(s.colorKey),
+  }));
   if (missing.length === 0) return normalized;
   return [
     ...normalized,
-    ...missing.map((s) => ({ id: s.id, name: s.name, colorKey: s.key, maxSessionsPerDay: DEFAULT_MAX_SESSIONS_PER_DAY, createdAt: now })),
+    ...missing.map((s) => ({
+      id: s.id,
+      name: s.name,
+      colorKey: s.key,
+      maxSessionsPerDay: DEFAULT_MAX_SESSIONS_PER_DAY,
+      dailyReview: s.dailyReview,
+      createdAt: now,
+    })),
   ];
 }
 
@@ -259,7 +270,9 @@ export const useAppStore = create<Store>()(
         }),
 
       resetDemoData: () => set({ ...buildDemoData(), activeSessionId: null }),
-      hydrateFromRemote: (remote) => set({ ...remote }),
+      // Normalized the same way a locally-rehydrated snapshot is (see `merge` below): a remote
+      // profile can predate a field just as a saved local one can, and remote wins on sign-in.
+      hydrateFromRemote: (remote) => set({ ...remote, subjects: backfillDefaultSubjects(remote.subjects) }),
     }),
     {
       name: "prepapilot-store-v1",

@@ -17,6 +17,12 @@ export interface Subject {
   colorKey: SubjectColorKey;
   /** Max revision sessions the generator will place for this subject on a single day. Defaults to 3. */
   maxSessionsPerDay: number;
+  /**
+   * Whether the generator opens each day that has this subject's courses with a re-read of
+   * them, sized in proportion to the day's course time. On by default for the heavy
+   * science subjects (Maths/Physique/SI) and off for the rest.
+   */
+  dailyReview: boolean;
   createdAt: string;
 }
 
@@ -113,13 +119,15 @@ export type SessionType =
   | "preparation_colle"
   | "devoir"
   | "revision"
+  /** Same-day re-read of the courses attended that day. */
+  | "relecture"
   | "pause";
 
 export type SessionPriority = "haute" | "moyenne" | "basse";
 
 export type SessionStatus = "a_faire" | "en_cours" | "termine" | "ignore";
 
-export type SessionSourceType = "exam" | "oral" | "assignment" | "spaced";
+export type SessionSourceType = "exam" | "oral" | "assignment" | "spaced" | "daily_review";
 
 export interface StudySession {
   id: string;

@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { defaultDailyReviewFor } from "@/lib/subjects";
 import type {
   AppState,
   Assignment,
@@ -35,15 +36,22 @@ const subjectsSync: TableSync<Subject> = {
     name: s.name,
     color_key: s.colorKey,
     max_sessions_per_day: s.maxSessionsPerDay,
+    daily_review: s.dailyReview,
     created_at: s.createdAt,
   }),
-  fromDb: (r) => ({
-    id: r.id as string,
-    name: r.name as string,
-    colorKey: r.color_key as Subject["colorKey"],
-    maxSessionsPerDay: (r.max_sessions_per_day as number | null) ?? 3,
-    createdAt: r.created_at as string,
-  }),
+  fromDb: (r) => {
+    const colorKey = r.color_key as Subject["colorKey"];
+    return {
+      id: r.id as string,
+      name: r.name as string,
+      colorKey,
+      maxSessionsPerDay: (r.max_sessions_per_day as number | null) ?? 3,
+      // Null means the row predates the column — fall back to the canonical default rather
+      // than to `false`, which would silently disable daily review on existing profiles.
+      dailyReview: (r.daily_review as boolean | null) ?? defaultDailyReviewFor(colorKey),
+      createdAt: r.created_at as string,
+    };
+  },
 };
 
 const chaptersSync: TableSync<Chapter> = {

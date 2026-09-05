@@ -33,12 +33,16 @@ create table if not exists public.subjects (
   color_key text not null default 'autre'
     check (color_key in ('maths', 'physique', 'chimie', 'si', 'francais', 'anglais', 'tipe', 'autre')),
   max_sessions_per_day smallint not null default 3,
+  -- Nullable on purpose: null means "never set" (the app then applies its canonical default
+  -- per subject), which an explicit false — the student turning it off — must not look like.
+  daily_review boolean,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
--- Idempotent migration for tables created before this column existed.
+-- Idempotent migrations for tables created before these columns existed.
 alter table public.subjects add column if not exists max_sessions_per_day smallint not null default 3;
+alter table public.subjects add column if not exists daily_review boolean;
 
 -- ---------------------------------------------------------------------------
 -- chapters
@@ -177,18 +181,29 @@ create table if not exists public.study_sessions (
   duration_minutes integer not null,
   title text not null,
   type text not null check (
-    type in ('cours', 'exercices', 'preparation_ds', 'preparation_colle', 'devoir', 'revision', 'pause')
+    type in ('cours', 'exercices', 'preparation_ds', 'preparation_colle', 'devoir', 'revision', 'relecture', 'pause')
   ),
   priority text check (priority in ('haute', 'moyenne', 'basse')),
   priority_score numeric not null default 0,
   status text not null default 'a_faire' check (status in ('a_faire', 'en_cours', 'termine', 'ignore')),
   reason text default '',
-  source_type text check (source_type in ('exam', 'oral', 'assignment', 'spaced')),
+  source_type text check (source_type in ('exam', 'oral', 'assignment', 'spaced', 'daily_review')),
   source_id text,
   actual_minutes integer not null default 0,
   auto boolean not null default false,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
+);
+
+-- Idempotent migration: widen the type/source_type checks on databases created before the
+-- "relecture" session type existed (create table if not exists leaves old constraints alone).
+alter table public.study_sessions drop constraint if exists study_sessions_type_check;
+alter table public.study_sessions add constraint study_sessions_type_check check (
+  type in ('cours', 'exercices', 'preparation_ds', 'preparation_colle', 'devoir', 'revision', 'relecture', 'pause')
+);
+alter table public.study_sessions drop constraint if exists study_sessions_source_type_check;
+alter table public.study_sessions add constraint study_sessions_source_type_check check (
+  source_type in ('exam', 'oral', 'assignment', 'spaced', 'daily_review')
 );
 
 create index if not exists study_sessions_user_date_idx on public.study_sessions (user_id, date);

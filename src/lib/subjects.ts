@@ -26,15 +26,24 @@ export function subjectColorVar(key: SubjectColorKey): string {
  * and, in the store's persist `merge`, to backfill any of these a returning user's saved
  * profile doesn't have yet — e.g. Anglais/TIPE added after they'd already saved data).
  */
-export const DEFAULT_SUBJECTS: { id: string; key: SubjectColorKey; name: string }[] = [
-  { id: "subj-maths", key: "maths", name: "Maths" },
-  { id: "subj-physique", key: "physique", name: "Physique" },
-  { id: "subj-chimie", key: "chimie", name: "Chimie" },
-  { id: "subj-si", key: "si", name: "SI" },
-  { id: "subj-francais", key: "francais", name: "Français / Philosophie" },
-  { id: "subj-anglais", key: "anglais", name: "Anglais" },
-  { id: "subj-tipe", key: "tipe", name: "TIPE" },
-  { id: "subj-autre", key: "autre", name: "Autre" },
+export const DEFAULT_SUBJECTS: { id: string; key: SubjectColorKey; name: string; dailyReview: boolean }[] = [
+  { id: "subj-maths", key: "maths", name: "Maths", dailyReview: true },
+  { id: "subj-physique", key: "physique", name: "Physique", dailyReview: true },
+  { id: "subj-chimie", key: "chimie", name: "Chimie", dailyReview: false },
+  { id: "subj-si", key: "si", name: "SI", dailyReview: true },
+  { id: "subj-francais", key: "francais", name: "Français / Philosophie", dailyReview: false },
+  { id: "subj-anglais", key: "anglais", name: "Anglais", dailyReview: false },
+  { id: "subj-tipe", key: "tipe", name: "TIPE", dailyReview: false },
+  { id: "subj-autre", key: "autre", name: "Autre", dailyReview: false },
 ];
 
 export const DEFAULT_SUBJECT_KEYS: SubjectColorKey[] = DEFAULT_SUBJECTS.map((s) => s.key);
+
+/**
+ * Canonical `dailyReview` for a subject that has never had the field set — used to backfill
+ * profiles saved (locally or in Supabase) before the field existed. Distinct from an explicit
+ * `false`, which means the student deliberately turned the daily re-read off.
+ */
+export function defaultDailyReviewFor(colorKey: SubjectColorKey): boolean {
+  return DEFAULT_SUBJECTS.find((s) => s.key === colorKey)?.dailyReview ?? false;
+}

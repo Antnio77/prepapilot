@@ -15,6 +15,7 @@ const TYPE_LABELS: Record<string, string> = {
   preparation_colle: "Préparation colle",
   devoir: "DM",
   revision: "Révision",
+  relecture: "Relecture du cours",
 };
 
 const PRIORITY_TONE = {

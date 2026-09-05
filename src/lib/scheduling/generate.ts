@@ -1,7 +1,7 @@
 import type { AppState, StudySession } from "@/types";
 import { uid, addDays, todayISO, dayOfWeekFromDate, fromISODate, timeToMinutes, minutesToTime, clamp } from "@/lib/utils";
 import { subtractIntervals, type Interval, intervalDuration } from "./intervals";
-import { buildWorkPool, type WorkUnit } from "./priority";
+import { buildDailyReviewUnits, buildWorkPool, type WorkUnit } from "./priority";
 
 const HORIZON_DAYS = 7;
 const FILL_RATIO = 0.92; // use nearly all declared availability — the user already chose that time for revision
@@ -116,8 +116,9 @@ function isEligible(unit: WorkUnit, dateISO: string): boolean {
 }
 
 /**
- * Deterministic scheduling algorithm. For each day, deadline-linked work (DS/colle/DM prep)
- * that specifically targets that day is placed first — almost regardless of the daily/subject
+ * Deterministic scheduling algorithm. Each day opens with a re-read of that day's courses
+ * (see buildDailyReviewUnits) before any deadline work. Then deadline-linked work (DS/colle/DM
+ * prep) that specifically targets that day is placed — almost regardless of the daily/subject
  * caps below — so a colle's "veille" review session actually lands the day before it, not
  * wherever the raw priority score happened to win first. Once targeted work is placed, the
  * remaining free time is filled greedily with the next-best eligible candidates (mostly spaced
@@ -157,6 +158,8 @@ export function generateSchedule(state: AppState): StudySession[] {
     const targetFill = clamp(dayBudget * FILL_RATIO, 0, MAX_DAILY_MINUTES);
     let usedToday = 0;
     const subjectDayCount = new Map<string, number>();
+    // Consumed before anything else below, so the day starts by re-reading its own courses.
+    const dailyReview = buildDailyReviewUnits(state, dateISO);
 
     for (const win of windows) {
       let cursor = win.start;
@@ -167,17 +170,23 @@ export function generateSchedule(state: AppState): StudySession[] {
         if (remainingInWindow < MIN_SESSION_MINUTES) break;
         if (usedToday >= MAX_DAILY_MINUTES) break;
 
-        // Deadline work reserved for exactly this day bypasses the soft daily-fill target and
-        // the per-subject cap: it MUST land here to actually be useful, even if that means two
-        // sessions of the same subject or slightly more work than a "typical" evening.
-        let candidateIdx = pickTargetedCandidate(remaining, dateISO, remainingInWindow);
-        if (candidateIdx === -1) {
-          if (usedToday >= targetFill) break;
-          candidateIdx = pickBestCandidate(remaining, dateISO, remainingInWindow, subjectDayCount, subjectWeekMinutes, maxSessionsPerSubject);
-        }
-        if (candidateIdx === -1) break;
+        // Same-day course re-reads come first — ahead of the daily-fill target and the
+        // per-subject cap, like targeted deadline work, since they only make sense today.
+        let unit = dailyReview.shift() ?? null;
 
-        const unit = remaining.splice(candidateIdx, 1)[0];
+        if (!unit) {
+          // Deadline work reserved for exactly this day bypasses the soft daily-fill target and
+          // the per-subject cap: it MUST land here to actually be useful, even if that means two
+          // sessions of the same subject or slightly more work than a "typical" evening.
+          let candidateIdx = pickTargetedCandidate(remaining, dateISO, remainingInWindow);
+          if (candidateIdx === -1) {
+            if (usedToday >= targetFill) break;
+            candidateIdx = pickBestCandidate(remaining, dateISO, remainingInWindow, subjectDayCount, subjectWeekMinutes, maxSessionsPerSubject);
+          }
+          if (candidateIdx === -1) break;
+          unit = remaining.splice(candidateIdx, 1)[0];
+        }
+
         const minutes = Math.min(unit.minutes, remainingInWindow);
         const session = makeSession(dateISO, cursor, { ...unit, minutes });
         generated.push(session);

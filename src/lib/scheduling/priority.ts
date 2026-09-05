@@ -1,5 +1,5 @@
-import type { AppState, Chapter, SessionType } from "@/types";
-import { addDays, clamp, clampISO, daysBetween, todayISO } from "@/lib/utils";
+import type { AppState, Chapter, SessionSourceType, SessionType } from "@/types";
+import { addDays, clamp, clampISO, dayOfWeekFromDate, daysBetween, formatMinutes, fromISODate, timeToMinutes, todayISO } from "@/lib/utils";
 
 /** One candidate slice of work the allocator can drop into a slot. */
 export interface WorkUnit {
@@ -11,7 +11,7 @@ export interface WorkUnit {
   minutes: number;
   priority: "haute" | "moyenne" | "basse";
   priorityScore: number;
-  sourceType: "exam" | "oral" | "assignment" | "spaced";
+  sourceType: SessionSourceType;
   sourceId: string | null;
   dueDate: string | null;
   /**
@@ -34,6 +34,57 @@ export interface WorkUnit {
 
 const HORIZON_URGENCY_DAYS = 14;
 const EPS = 0.08; // floor so a single weak factor doesn't zero out the whole score
+
+/** Share of a day's course time spent re-reading those same courses that evening. */
+const DAILY_REVIEW_RATIO = 0.2;
+const DAILY_REVIEW_MIN_MINUTES = 20;
+const DAILY_REVIEW_MAX_MINUTES = 45;
+
+/**
+ * "Relecture" units: before touching any deadline work, the evening opens by re-reading the
+ * courses actually attended that day, one block per subject that opted in (`subject.dailyReview`
+ * — on by default for Maths/Physique/SI). Length is proportional to how long that subject was
+ * taught that day, so a 4h maths day earns a longer re-read than a single hour, then clamped so
+ * it stays a re-read rather than eating the whole evening.
+ *
+ * Built per-day rather than inside `buildWorkPool` because these are tied to one specific date's
+ * timetable — there is nothing to spread across a window, and nothing to carry to another day.
+ */
+export function buildDailyReviewUnits(state: AppState, dateISO: string): WorkUnit[] {
+  const dow = dayOfWeekFromDate(fromISODate(dateISO));
+  const units: WorkUnit[] = [];
+
+  for (const subject of state.subjects) {
+    if (!subject.dailyReview) continue;
+    const courseMinutes = state.courseEvents
+      .filter((c) => c.subjectId === subject.id && c.dayOfWeek === dow)
+      .reduce((sum, c) => sum + Math.max(0, timeToMinutes(c.endTime) - timeToMinutes(c.startTime)), 0);
+    if (courseMinutes <= 0) continue;
+
+    const minutes =
+      Math.round(clamp(courseMinutes * DAILY_REVIEW_RATIO, DAILY_REVIEW_MIN_MINUTES, DAILY_REVIEW_MAX_MINUTES) / 5) * 5;
+
+    units.push({
+      subjectId: subject.id,
+      chapterId: null,
+      type: "relecture",
+      title: `Relecture ${subject.name}`,
+      reason: `${formatMinutes(courseMinutes)} de cours aujourd'hui`,
+      minutes,
+      priority: "moyenne",
+      // Heaviest course day first, so the subject you had most of gets re-read first.
+      priorityScore: courseMinutes,
+      sourceType: "daily_review",
+      sourceId: null,
+      dueDate: null,
+      windowStart: dateISO,
+      windowEnd: dateISO,
+      targetDate: dateISO,
+    });
+  }
+
+  return units.sort((a, b) => b.priorityScore - a.priorityScore);
+}
 
 function urgencyFromDueDate(daysUntil: number): number {
   if (daysUntil < 0) return 1; // overdue: treat as maximally urgent
