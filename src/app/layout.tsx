@@ -27,9 +27,21 @@ export const viewport: Viewport = {
   ],
 };
 
+/**
+ * Stamps the saved theme on <html> before the first paint, so a student who picked light doesn't
+ * get a flash of the dark palette (or vice versa) while React hydrates. Deliberately tiny and
+ * synchronous; the storage key must stay in step with lib/useTheme.ts.
+ */
+const themeScript = `try{var t=localStorage.getItem("prepapilot-theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}`;
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="fr" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
+    // suppressHydrationWarning: themeScript deliberately stamps data-theme on <html> before
+    // React hydrates, so this one element's attributes differ from the server HTML by design.
+    <html lang="fr" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`} suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+      </head>
       <body className="min-h-full">
         <AppShell>{children}</AppShell>
       </body>

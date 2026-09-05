@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { NAV_ITEMS } from "./nav";
 import { isSupabaseConfigured, getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useSupabaseUserEmail } from "@/lib/supabase/useSupabaseUser";
+import { ThemeToggle } from "./ThemeToggle";
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -50,7 +51,8 @@ export function Sidebar() {
         })}
       </nav>
 
-      <div className="px-4 py-4 border-t border-border-soft">
+      <div className="px-4 py-4 border-t border-border-soft space-y-2">
+        <ThemeToggle />
         {isSupabaseConfigured && email ? (
           <div className="rounded-xl bg-surface-hover px-3 py-2.5">
             <p className="text-xs font-medium text-foreground truncate">{email}</p>

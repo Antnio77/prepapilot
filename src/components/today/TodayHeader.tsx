@@ -4,6 +4,7 @@ import { formatDateLong } from "@/lib/utils";
 import { todayISO } from "@/lib/utils";
 import { RemindersToggle } from "@/components/reminders/RemindersToggle";
 import { AccountMenu } from "@/components/layout/AccountMenu";
+import { ThemeToggle } from "@/components/layout/ThemeToggle";
 
 function greeting(): string {
   const h = new Date().getHours();
@@ -23,6 +24,10 @@ export function TodayHeader() {
         </h1>
       </div>
       <div className="flex items-center gap-2 shrink-0">
+        {/* The sidebar's switch is desktop-only, so mirror it here for phones. */}
+        <span className="md:hidden">
+          <ThemeToggle compact />
+        </span>
         <AccountMenu />
         <RemindersToggle />
       </div>
