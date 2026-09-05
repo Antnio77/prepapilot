@@ -8,6 +8,26 @@ import type { DragBlock, DropPreview } from "./usePlanningDrag";
 import { layoutOverlaps, type LayoutSlot } from "./collisionLayout";
 import { GRID_HEIGHT, HOURS, PX_PER_HOUR, START_HOUR, heightForRange, topForTime } from "./gridMath";
 
+/**
+ * Subject-coloured wash for a block's background. Mixing against `--surface` rather than
+ * hardcoding a tint means the same call yields a pale wash in the light theme and a deep one in
+ * the dark theme. Blocks keep a `bg-*` utility class underneath as a fallback: if a browser
+ * doesn't support color-mix it drops the inline declaration and the plain class still applies.
+ */
+function tint(color: string, percent: number): string {
+  return `color-mix(in srgb, ${color} ${percent}%, var(--surface))`;
+}
+
+/**
+ * Subject colour pulled toward the foreground so it stays legible as text on a tinted block —
+ * the raw palette values (yellow, orange, green) have far too little contrast on their own wash.
+ * 50% is the mix that keeps every subject at or above the 4.5:1 AA ratio in both themes; the
+ * lightest ones (TIPE's yellow, Anglais' cyan) are what set that ceiling.
+ */
+function readable(color: string): string {
+  return `color-mix(in srgb, ${color} 50%, var(--foreground))`;
+}
+
 function slotStyle(slot: LayoutSlot | undefined, gutterPx: number): { left: string; width: string } {
   const cols = slot?.cols ?? 1;
   const col = slot?.col ?? 0;
@@ -109,12 +129,20 @@ export function DayColumn({
             onEditCourse(c);
           }}
           className={cn(
-            "group absolute rounded-md bg-surface-hover border-l-2 px-1.5 py-0.5 cursor-grab active:cursor-grabbing hover:brightness-95 hover:z-10 transition touch-none select-none",
+            "group absolute rounded-md bg-surface-hover border-l-[3px] px-1.5 py-0.5 cursor-grab active:cursor-grabbing hover:brightness-95 hover:z-10 transition touch-none select-none",
             draggingId === c.id && "opacity-30"
           )}
-          style={{ top: topForTime(c.startTime), height: heightForRange(c.startTime, c.endTime), borderColor: colorFor(c.subjectId), ...slotStyle(layout.get(`course-${c.id}`), 2) }}
+          style={{
+            top: topForTime(c.startTime),
+            height: heightForRange(c.startTime, c.endTime),
+            borderColor: colorFor(c.subjectId),
+            background: tint(colorFor(c.subjectId), 14),
+            ...slotStyle(layout.get(`course-${c.id}`), 2),
+          }}
         >
-          <p className="text-[10px] font-medium text-muted-foreground truncate leading-tight">{c.title}</p>
+          <p className="text-[10px] font-semibold truncate leading-tight" style={{ color: readable(colorFor(c.subjectId)) }}>
+            {c.title}
+          </p>
           <div
             onPointerDown={(e) => onBlockPointerDown(e, { kind: "course", id: c.id, dateISO, startTime: c.startTime, endTime: c.endTime, title: c.title, color: colorFor(c.subjectId) }, "resize")}
             className="absolute inset-x-0 -bottom-1 h-3 cursor-ns-resize flex items-end justify-center pb-0.5 touch-none"
@@ -176,7 +204,9 @@ export function DayColumn({
               onEditSession(s);
             }}
             className={cn(
-              "group absolute rounded-md px-1.5 py-1 text-left border-l-2 transition-transform hover:scale-[1.02] hover:z-10 cursor-grab active:cursor-grabbing touch-none select-none",
+              // Revision blocks carry a stronger wash and a shadow than the timetable courses
+              // underneath them, so what you have to *do* reads louder than what's simply fixed.
+              "group absolute rounded-md px-1.5 py-1 text-left border-l-[3px] bg-surface transition-transform hover:scale-[1.02] hover:z-10 cursor-grab active:cursor-grabbing touch-none select-none",
               s.status === "termine" && "opacity-50",
               s.status === "ignore" && "opacity-40",
               draggingId === s.id && "opacity-30"
@@ -185,15 +215,15 @@ export function DayColumn({
               top: topForTime(s.startTime),
               height: heightForRange(s.startTime, s.endTime),
               borderColor: color,
-              background: "var(--surface)",
+              background: tint(color, 26),
               boxShadow: "var(--shadow-card)",
               ...slotStyle(layout.get(`session-${s.id}`), 4),
             }}
           >
-            <p className="text-[10px] font-semibold truncate leading-tight" style={{ color }}>
+            <p className="text-[10px] font-semibold truncate leading-tight" style={{ color: readable(color) }}>
               {s.title}
             </p>
-            <p className="text-[9px] text-muted-foreground truncate leading-tight">
+            <p className="text-[9px] truncate leading-tight" style={{ color: readable(color), opacity: 0.75 }}>
               {s.startTime}–{s.endTime}
             </p>
             <div
