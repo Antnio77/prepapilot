@@ -43,11 +43,15 @@ export function ThemeToggle({ compact = false }: { compact?: boolean }) {
         aria-checked={isDark}
         className={cn("relative h-5 w-9 shrink-0 rounded-full transition-colors", isDark ? "bg-accent" : "bg-border")}
       >
-        {/* The shadow keeps the white knob legible against the pale off-state track in light mode. */}
+        {/* Animates `left` rather than translate-x-*: those set `translate` via an unregistered
+            custom property, which browsers don't interpolate reliably, so the knob stayed put and
+            only the track colour changed. An explicit left also pins the knob independently of the
+            static position, which the button's inherited text-align:center would otherwise shift.
+            The shadow keeps the white knob legible against the pale off-state track in light mode. */}
         <span
           className={cn(
-            "absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-[0_1px_2px_rgba(0,0,0,0.25)] transition-transform",
-            isDark ? "translate-x-[18px]" : "translate-x-0.5"
+            "absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-[0_1px_2px_rgba(0,0,0,0.25)] transition-[left] duration-200",
+            isDark ? "left-[18px]" : "left-0.5"
           )}
         />
       </span>

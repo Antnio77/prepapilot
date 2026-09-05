@@ -92,8 +92,9 @@ export default function SubjectsPage() {
                 >
                   <span
                     className={cn(
-                      "absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-[0_1px_2px_rgba(0,0,0,0.25)] transition-transform",
-                      subject.dailyReview ? "translate-x-[18px]" : "translate-x-0.5"
+                      // Animates `left`, not translate-x-* — see the note in ThemeToggle for why.
+                      "absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-[0_1px_2px_rgba(0,0,0,0.25)] transition-[left] duration-200",
+                      subject.dailyReview ? "left-[18px]" : "left-0.5"
                     )}
                   />
                 </button>
