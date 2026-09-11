@@ -86,6 +86,51 @@ export function buildDailyReviewUnits(state: AppState, dateISO: string): WorkUni
   return units.sort((a, b) => b.priorityScore - a.priorityScore);
 }
 
+/** Length of each extra revision block poured into the free time left on a colle eve. */
+export const COLLE_SOAK_CHUNK_MINUTES = 45;
+
+/**
+ * Template for the work that soaks up whatever free time is still empty on the eve of a colle.
+ *
+ * The scheduled colle prep above is deliberately budgeted (~55min split across the chapters on the
+ * programme), which is the right *minimum* — but leaving the rest of that evening blank when a
+ * colle is tomorrow is wrong: that time has no better claim on it. So once everything else
+ * eligible has been placed, the allocator repeats this unit until the evening is full. It is
+ * genuinely last in line — relectures, DM work and every other deadline's prep are all placed
+ * first — so it only ever takes time that would otherwise have stayed empty.
+ *
+ * Chapter-less on purpose: these are extra passes over the whole programme, and attributing each
+ * repeat to one chapter would inflate that chapter's mastery on completion.
+ */
+export function buildColleSoakUnit(state: AppState, dateISO: string): WorkUnit | null {
+  const colleDate = addDays(dateISO, 1);
+  const subjectById = new Map(state.subjects.map((s) => [s.id, s]));
+
+  const tomorrow = state.oralExams.filter((o) => o.date === colleDate && subjectById.has(o.subjectId));
+  if (tomorrow.length === 0) return null;
+
+  // Several colles on the same day: the most important one takes the leftover time.
+  const oral = tomorrow.reduce((best, o) => (o.importance > best.importance ? o : best));
+  const subject = subjectById.get(oral.subjectId)!;
+
+  return {
+    subjectId: subject.id,
+    chapterId: null,
+    type: "preparation_colle",
+    title: oral.theme,
+    reason: "Colle demain · révision approfondie",
+    minutes: COLLE_SOAK_CHUNK_MINUTES,
+    priority: "haute",
+    priorityScore: weightedScore(urgencyFromDueDate(1), clamp(oral.importance / 5, EPS, 1)),
+    sourceType: "oral",
+    sourceId: oral.id,
+    dueDate: oral.date,
+    windowStart: dateISO,
+    windowEnd: dateISO,
+    targetDate: dateISO,
+  };
+}
+
 function urgencyFromDueDate(daysUntil: number): number {
   if (daysUntil < 0) return 1; // overdue: treat as maximally urgent
   return clamp(1 - daysUntil / HORIZON_URGENCY_DAYS, EPS, 1);

@@ -1,7 +1,7 @@
 import type { AppState, StudySession } from "@/types";
 import { uid, addDays, todayISO, dayOfWeekFromDate, fromISODate, timeToMinutes, minutesToTime, clamp } from "@/lib/utils";
 import { subtractIntervals, type Interval, intervalDuration } from "./intervals";
-import { buildDailyReviewUnits, buildWorkPool, type WorkUnit } from "./priority";
+import { buildColleSoakUnit, buildDailyReviewUnits, buildWorkPool, type WorkUnit } from "./priority";
 
 const HORIZON_DAYS = 7;
 const FILL_RATIO = 0.92; // use nearly all declared availability — the user already chose that time for revision
@@ -124,6 +124,10 @@ function isEligible(unit: WorkUnit, dateISO: string): boolean {
  * remaining free time is filled greedily with the next-best eligible candidates (mostly spaced
  * repetition), capping subjects per day for variety and stopping well before a window is
  * completely full so the plan never feels crushing.
+ *
+ * That last restraint is dropped on the eve of a colle: rather than stopping early and leaving
+ * the evening half empty, whatever time is left over goes back into revising that colle (see
+ * buildColleSoakUnit).
  */
 export function generateSchedule(state: AppState): StudySession[] {
   const from = todayISO();
@@ -160,6 +164,8 @@ export function generateSchedule(state: AppState): StudySession[] {
     const subjectDayCount = new Map<string, number>();
     // Consumed before anything else below, so the day starts by re-reading its own courses.
     const dailyReview = buildDailyReviewUnits(state, dateISO);
+    // Last in line: repeated to fill whatever is still empty when a colle is tomorrow.
+    const colleSoak = buildColleSoakUnit(state, dateISO);
 
     for (const win of windows) {
       let cursor = win.start;
@@ -179,12 +185,19 @@ export function generateSchedule(state: AppState): StudySession[] {
           // the per-subject cap: it MUST land here to actually be useful, even if that means two
           // sessions of the same subject or slightly more work than a "typical" evening.
           let candidateIdx = pickTargetedCandidate(remaining, dateISO, remainingInWindow);
-          if (candidateIdx === -1) {
-            if (usedToday >= targetFill) break;
+          if (candidateIdx === -1 && usedToday < targetFill) {
             candidateIdx = pickBestCandidate(remaining, dateISO, remainingInWindow, subjectDayCount, subjectWeekMinutes, maxSessionsPerSubject);
           }
-          if (candidateIdx === -1) break;
-          unit = remaining.splice(candidateIdx, 1)[0];
+
+          if (candidateIdx !== -1) {
+            unit = remaining.splice(candidateIdx, 1)[0];
+          } else if (colleSoak) {
+            // Nothing left worth scheduling, but tomorrow is a colle: spend the rest of the
+            // evening on it rather than stopping early and leaving the time blank.
+            unit = { ...colleSoak, minutes: Math.min(colleSoak.minutes, remainingInWindow) };
+          } else {
+            break;
+          }
         }
 
         const minutes = Math.min(unit.minutes, remainingInWindow);
