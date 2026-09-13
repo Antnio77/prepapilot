@@ -4,7 +4,7 @@ import { cn, dayOfWeekFromDate, fromISODate, todayISO, weekdayLabel } from "@/li
 import { DayColumn } from "./DayColumn";
 import { GRID_HEIGHT, HOURS, PX_PER_HOUR } from "./gridMath";
 import type { CourseEvent, StudySession } from "@/types";
-import type { DragBlock, DropPreview } from "./usePlanningDrag";
+import type { BlockArming, DragBlock, DropPreview } from "./usePlanningDrag";
 
 /**
  * One day at a time instead of the desktop's 7-column grid: on a phone width, seven
@@ -26,6 +26,7 @@ export function MobileDayView({
   consumeSuppressed,
   dropPreview,
   draggingId,
+  arming,
 }: {
   dates: string[];
   selectedDate: string;
@@ -38,6 +39,7 @@ export function MobileDayView({
   consumeSuppressed: () => boolean;
   dropPreview: DropPreview | null;
   draggingId: string | null;
+  arming: BlockArming;
 }) {
   return (
     <div>
@@ -93,6 +95,7 @@ export function MobileDayView({
               consumeSuppressed={consumeSuppressed}
               dropPreview={dropPreview}
               draggingId={draggingId}
+              arming={arming}
             />
           </div>
         </div>

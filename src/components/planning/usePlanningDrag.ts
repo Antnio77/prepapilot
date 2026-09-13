@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useAppStore } from "@/lib/store/useAppStore";
 import { isSlotAvailable } from "@/lib/scheduling/generate";
 import { dayOfWeekFromDate, fromISODate, minutesToTime, timeToMinutes } from "@/lib/utils";
@@ -33,12 +33,29 @@ export interface DropPreview {
   valid: boolean;
 }
 
+/** Two-step touch dragging: tap to arm a block, then drag the armed block. */
+export interface BlockArming {
+  /** Block currently armed for touch dragging, or null. Always null for mouse/stylus. */
+  armedId: string | null;
+  /**
+   * Call on a block's tap. Returns true when the tap was spent arming the block, meaning the
+   * caller should NOT also act on it (open the editor); false to handle the tap normally.
+   */
+  armOnTap: (blockId: string) => boolean;
+  disarm: () => void;
+}
+
 /**
  * Click-and-drag rescheduling for the week grid: drag a block's body to move it (to a new
  * time and/or day), or its bottom edge to resize it. Built on Pointer Events rather than
  * separate mouse/touch handlers, so the exact same code drives it with a mouse, a finger, or
  * a stylus — resize needs continuous pixel feedback that the native HTML5 DnD API doesn't
  * give, so both move and resize share this one plain-event-tracking mechanism.
+ *
+ * Touch takes an extra step: a finger may only drag a block that a previous tap armed. Without
+ * that, a swipe that merely happens to start on a block dragged it instead of scrolling the
+ * page — on a phone, where blocks cover most of the grid, scrolling the day became a lottery.
+ * Mouse and stylus keep dragging on the first press, since they can't be confused with a scroll.
  */
 export function usePlanningDrag() {
   const updateStudySession = useAppStore((s) => s.updateStudySession);
@@ -51,6 +68,11 @@ export function usePlanningDrag() {
     clientY: number;
     preview: DropPreview;
   } | null>(null);
+
+  const [armedId, setArmedId] = useState<string | null>(null);
+  // A tap arrives as pointerdown-then-click, and click carries no pointerType — so the
+  // pointerdown that preceded it is where we learn whether this was a finger or a mouse.
+  const lastPointerTypeRef = useRef<string>("mouse");
 
   const columnRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const registerColumn = useCallback((dateISO: string, el: HTMLDivElement | null) => {
@@ -163,6 +185,9 @@ export function usePlanningDrag() {
     latestPreviewRef.current = null;
     if (st?.dragging && preview) {
       suppressClickRef.current = true;
+      // Disarm once the move is done: leaving it armed would let the very next swipe across
+      // the block drag it again instead of scrolling, which is the trap this all exists to avoid.
+      setArmedId(null);
       // An invalid drop (a session moved/resized outside declared availability) is simply
       // discarded — the block snaps back to where it was, no partial or out-of-bounds update.
       if (preview.valid) commit(st.block, preview);
@@ -174,6 +199,11 @@ export function usePlanningDrag() {
     (e: React.PointerEvent, block: DragBlock, mode: "move" | "resize") => {
       if (e.button !== 0) return;
       e.stopPropagation();
+      lastPointerTypeRef.current = e.pointerType;
+      // A finger only drags a block a previous tap armed. Returning here registers no move
+      // listeners and calls no preventDefault, so the browser is free to treat the gesture as
+      // the scroll it almost always is.
+      if (e.pointerType === "touch" && armedId !== block.id) return;
       const startMin = timeToMinutes(block.startTime);
       const endMin = timeToMinutes(block.endTime);
       const colEl = columnRefs.current.get(block.dateISO);
@@ -204,8 +234,22 @@ export function usePlanningDrag() {
       window.addEventListener("pointerup", onUp);
       window.addEventListener("pointercancel", onUp);
     },
-    [handlePointerMove, handlePointerUp]
+    [handlePointerMove, handlePointerUp, armedId]
   );
 
-  return { ghost, registerColumn, startDrag, consumeSuppressed };
+  const arming = useMemo<BlockArming>(
+    () => ({
+      armedId,
+      armOnTap: (blockId: string) => {
+        if (lastPointerTypeRef.current !== "touch") return false;
+        if (armedId === blockId) return false; // already armed: this tap opens the editor
+        setArmedId(blockId);
+        return true;
+      },
+      disarm: () => setArmedId(null),
+    }),
+    [armedId]
+  );
+
+  return { ghost, registerColumn, startDrag, consumeSuppressed, arming };
 }

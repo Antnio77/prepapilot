@@ -35,7 +35,7 @@ export default function PlanningPage() {
   const [defaultStartTime, setDefaultStartTime] = useState<string | undefined>(undefined);
   const [addChoice, setAddChoice] = useState<{ dateISO: string; minutes: number } | null>(null);
 
-  const { ghost, registerColumn, startDrag, consumeSuppressed } = usePlanningDrag();
+  const { ghost, registerColumn, startDrag, consumeSuppressed, arming } = usePlanningDrag();
 
   const dates = weekDates(weekStart);
 
@@ -178,6 +178,7 @@ export default function PlanningPage() {
                   consumeSuppressed={consumeSuppressed}
                   dropPreview={ghost?.preview ?? null}
                   draggingId={ghost?.block.id ?? null}
+                  arming={arming}
                 />
               ))}
             </div>
@@ -200,6 +201,7 @@ export default function PlanningPage() {
         consumeSuppressed={consumeSuppressed}
         dropPreview={ghost?.preview ?? null}
         draggingId={ghost?.block.id ?? null}
+        arming={arming}
       />
       )}
 

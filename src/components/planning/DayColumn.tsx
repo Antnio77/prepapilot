@@ -4,7 +4,7 @@ import { useAppStore } from "@/lib/store/useAppStore";
 import { subjectColorVar } from "@/lib/subjects";
 import { cn, dayOfWeekFromDate, fromISODate, timeToMinutes, todayISO } from "@/lib/utils";
 import type { CourseEvent, StudySession } from "@/types";
-import type { DragBlock, DropPreview } from "./usePlanningDrag";
+import type { BlockArming, DragBlock, DropPreview } from "./usePlanningDrag";
 import { layoutOverlaps, type LayoutSlot } from "./collisionLayout";
 import { GRID_HEIGHT, HOURS, PX_PER_HOUR, START_HOUR, heightForRange, topForTime } from "./gridMath";
 
@@ -47,6 +47,7 @@ export function DayColumn({
   consumeSuppressed,
   dropPreview,
   draggingId,
+  arming,
 }: {
   dateISO: string;
   onEditSession: (session: StudySession) => void;
@@ -57,6 +58,7 @@ export function DayColumn({
   consumeSuppressed: () => boolean;
   dropPreview: DropPreview | null;
   draggingId: string | null;
+  arming: BlockArming;
 }) {
   const dow = dayOfWeekFromDate(fromISODate(dateISO));
   const subjects = useAppStore((s) => s.subjects);
@@ -90,6 +92,12 @@ export function DayColumn({
 
   function handleBackgroundClick(e: React.MouseEvent<HTMLDivElement>) {
     if (consumeSuppressed()) return;
+    // Tapping away from an armed block just dismisses it, rather than also opening the
+    // "what do you want to add here?" dialog on what reads as a cancelling tap.
+    if (arming.armedId) {
+      arming.disarm();
+      return;
+    }
     const rect = e.currentTarget.getBoundingClientRect();
     const rawMinutes = START_HOUR * 60 + ((e.clientY - rect.top) / PX_PER_HOUR) * 60;
     const snapped = Math.round(rawMinutes / 15) * 15;
@@ -126,10 +134,14 @@ export function DayColumn({
           onClick={(e) => {
             e.stopPropagation();
             if (consumeSuppressed()) return;
+            if (arming.armOnTap(c.id)) return;
             onEditCourse(c);
           }}
           className={cn(
-            "group absolute rounded-md bg-surface-hover border-l-[3px] px-1.5 py-0.5 cursor-grab active:cursor-grabbing hover:brightness-95 hover:z-10 transition touch-none select-none",
+            "group absolute rounded-md bg-surface-hover border-l-[3px] px-1.5 py-0.5 cursor-grab active:cursor-grabbing hover:brightness-95 hover:z-10 transition select-none",
+            // Only an armed block swallows touch gestures; every other block lets the finger
+            // scroll the page straight through it.
+            arming.armedId === c.id ? "touch-none z-10" : "touch-auto",
             draggingId === c.id && "opacity-30"
           )}
           style={{
@@ -137,6 +149,8 @@ export function DayColumn({
             height: heightForRange(c.startTime, c.endTime),
             borderColor: colorFor(c.subjectId),
             background: tint(colorFor(c.subjectId), 14),
+            outline: arming.armedId === c.id ? `2px solid ${colorFor(c.subjectId)}` : undefined,
+            outlineOffset: 1,
             ...slotStyle(layout.get(`course-${c.id}`), 2),
           }}
         >
@@ -145,9 +159,19 @@ export function DayColumn({
           </p>
           <div
             onPointerDown={(e) => onBlockPointerDown(e, { kind: "course", id: c.id, dateISO, startTime: c.startTime, endTime: c.endTime, title: c.title, color: colorFor(c.subjectId) }, "resize")}
-            className="absolute inset-x-0 -bottom-1 h-3 cursor-ns-resize flex items-end justify-center pb-0.5 touch-none"
+            className={cn(
+              "absolute inset-x-0 -bottom-1 h-3 cursor-ns-resize flex items-end justify-center pb-0.5",
+              arming.armedId === c.id ? "touch-none" : "touch-auto"
+            )}
           >
-            <span className="w-6 h-1 rounded-full bg-foreground/40 opacity-0 group-hover:opacity-100" />
+            {/* Hover can't reveal this on a phone, so arming does: the grip appearing is also
+                what tells you the block is now yours to drag. */}
+            <span
+              className={cn(
+                "w-6 h-1 rounded-full bg-foreground/40 group-hover:opacity-100",
+                arming.armedId === c.id ? "opacity-100" : "opacity-0"
+              )}
+            />
           </div>
         </div>
       ))}
@@ -201,12 +225,16 @@ export function DayColumn({
             onClick={(e) => {
               e.stopPropagation();
               if (consumeSuppressed()) return;
+              if (arming.armOnTap(s.id)) return;
               onEditSession(s);
             }}
             className={cn(
               // Revision blocks carry a stronger wash and a shadow than the timetable courses
               // underneath them, so what you have to *do* reads louder than what's simply fixed.
-              "group absolute rounded-md px-1.5 py-1 text-left border-l-[3px] bg-surface transition-transform hover:scale-[1.02] hover:z-10 cursor-grab active:cursor-grabbing touch-none select-none",
+              "group absolute rounded-md px-1.5 py-1 text-left border-l-[3px] bg-surface transition-transform hover:scale-[1.02] hover:z-10 cursor-grab active:cursor-grabbing select-none",
+              // Only an armed block swallows touch gestures; every other block lets the finger
+              // scroll the page straight through it.
+              arming.armedId === s.id ? "touch-none z-10" : "touch-auto",
               s.status === "termine" && "opacity-50",
               s.status === "ignore" && "opacity-40",
               draggingId === s.id && "opacity-30"
@@ -217,6 +245,8 @@ export function DayColumn({
               borderColor: color,
               background: tint(color, 26),
               boxShadow: "var(--shadow-card)",
+              outline: arming.armedId === s.id ? `2px solid ${color}` : undefined,
+              outlineOffset: 1,
               ...slotStyle(layout.get(`session-${s.id}`), 4),
             }}
           >
@@ -228,9 +258,17 @@ export function DayColumn({
             </p>
             <div
               onPointerDown={(e) => onBlockPointerDown(e, { kind: "session", id: s.id, dateISO, startTime: s.startTime, endTime: s.endTime, title: s.title, color }, "resize")}
-              className="absolute inset-x-0 -bottom-1 h-3 cursor-ns-resize flex items-end justify-center pb-0.5 touch-none"
+              className={cn(
+                "absolute inset-x-0 -bottom-1 h-3 cursor-ns-resize flex items-end justify-center pb-0.5",
+                arming.armedId === s.id ? "touch-none" : "touch-auto"
+              )}
             >
-              <span className="w-6 h-1 rounded-full bg-foreground/40 opacity-0 group-hover:opacity-100" />
+              <span
+                className={cn(
+                  "w-6 h-1 rounded-full bg-foreground/40 group-hover:opacity-100",
+                  arming.armedId === s.id ? "opacity-100" : "opacity-0"
+                )}
+              />
             </div>
           </div>
         );
