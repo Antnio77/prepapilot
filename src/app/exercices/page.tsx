@@ -11,6 +11,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Badge } from "@/components/ui/Badge";
 import { ExerciseFormModal } from "@/components/exercises/ExerciseFormModal";
 import { ExerciseReviewer } from "@/components/exercises/ExerciseReviewer";
+import { PhotoPromptCard } from "@/components/exercises/PhotoPromptCard";
 import { MathText } from "@/components/exercises/MathText";
 import { relativeDayLabel } from "@/lib/utils";
 import type { Exercise, ExerciseRating } from "@/types";
@@ -124,6 +125,8 @@ export default function ExercisesPage() {
         </Card>
       ) : (
         <>
+          <PhotoPromptCard />
+
           <div className="flex flex-wrap items-center gap-2">
             <select
               value={subjectFilter}
