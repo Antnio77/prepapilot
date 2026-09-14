@@ -116,6 +116,101 @@ function isEligible(unit: WorkUnit, dateISO: string): boolean {
 }
 
 /**
+ * What counts as "the same thing to work on" for grouping. A colle's chapters all key on the
+ * colle, so its scattered pieces end up side by side rather than at either end of the evening.
+ */
+function topicKey(s: StudySession): string {
+  if (s.sourceId) return `source:${s.sourceId}`;
+  if (s.chapterId) return `chapter:${s.chapterId}`;
+  return `subject:${s.subjectId}:${s.type}`;
+}
+
+/** Literally the same work, and so safe to fuse into one longer block without losing meaning. */
+function isSameWork(a: StudySession, b: StudySession): boolean {
+  return (
+    a.type === b.type &&
+    a.subjectId === b.subjectId &&
+    a.chapterId === b.chapterId &&
+    a.sourceId === b.sourceId &&
+    a.title === b.title
+  );
+}
+
+/**
+ * Re-lays one window so each topic is done in a single stretch.
+ *
+ * The allocator picks work by priority, which naturally interleaves: the colle's reserved prep
+ * lands first, re-reads and spaced repetition follow, then the leftover-time filler returns to
+ * that same colle hours later. Correct by priority, miserable to actually sit through — every
+ * hand-off costs you the context you'd just built up. So once a day's work is chosen, it gets
+ * reordered: topics keep their priority order by first appearance, but all of a topic's blocks
+ * move together, and identical repeats fuse into one uninterrupted block. Breaks survive only
+ * between topics, where the switch is real, never inside a stretch on one subject.
+ *
+ * Only the order and the block boundaries change here — never which work was chosen, nor how
+ * many minutes it gets.
+ */
+function regroupWindow(blocks: StudySession[], win: Interval, dateISO: string, filledTo: number): StudySession[] {
+  if (blocks.length === 0) return [];
+
+  const order: string[] = [];
+  const byTopic = new Map<string, StudySession[]>();
+  for (const b of blocks) {
+    const key = topicKey(b);
+    if (!byTopic.has(key)) {
+      byTopic.set(key, []);
+      order.push(key);
+    }
+    byTopic.get(key)!.push(b);
+  }
+
+  const merged: { topic: string; session: StudySession }[] = [];
+  for (const key of order) {
+    for (const b of byTopic.get(key)!) {
+      const last = merged[merged.length - 1];
+      if (last && last.topic === key && isSameWork(last.session, b)) {
+        last.session = { ...last.session, durationMinutes: last.session.durationMinutes + b.durationMinutes };
+      } else {
+        merged.push({ topic: key, session: b });
+      }
+    }
+  }
+
+  const out: StudySession[] = [];
+  let cursor = win.start;
+  let workLeft = merged.reduce((sum, m) => sum + m.session.durationMinutes, 0);
+
+  merged.forEach((m, i) => {
+    // A break belongs at a topic change, but only after a stretch long enough to have earned
+    // one — a couple of 25min re-readings back to back don't need a pause wedged between them.
+    // And dropping the breaks that used to sit mid-stretch frees time, so it only goes in when
+    // everything still to place fits after it.
+    const previous = i > 0 ? merged[i - 1] : null;
+    const earnedBreak = previous !== null && previous.topic !== m.topic && previous.session.durationMinutes >= 35;
+    if (earnedBreak && win.end - cursor - BREAK_MINUTES >= workLeft) {
+      out.push(makeBreak(dateISO, cursor, BREAK_MINUTES));
+      cursor += BREAK_MINUTES;
+    }
+    let minutes = m.session.durationMinutes;
+    // Fewer breaks would otherwise end an evening that was full a few minutes early; hand those
+    // minutes to the last block instead, but only when the window really was filled to the brim.
+    if (i === merged.length - 1 && filledTo >= win.end - BREAK_MINUTES && cursor + minutes < win.end) {
+      minutes = win.end - cursor;
+    }
+    out.push({
+      ...m.session,
+      startTime: minutesToTime(cursor),
+      endTime: minutesToTime(cursor + minutes),
+      durationMinutes: minutes,
+    });
+    cursor += minutes;
+    workLeft -= m.session.durationMinutes;
+  });
+
+  return out;
+}
+
+/**
  * Deterministic scheduling algorithm. Deadline-linked work (DS/colle/DM prep) that specifically
  * targets a day is placed first — almost regardless of the daily/subject caps below — so a
  * colle's "veille" review session actually lands the day before it, not wherever the raw
@@ -171,6 +266,9 @@ export function generateSchedule(state: AppState): StudySession[] {
     for (const win of windows) {
       let cursor = win.start;
       let remainingInWindow = intervalDuration(win);
+      // Collected rather than emitted straight away: the order work is *chosen* in is priority
+      // order, which is not the order it should be *sat through* (see regroupWindow).
+      const placed: StudySession[] = [];
 
       // Keep pulling the best-fitting candidate until this window (or the daily budget) is exhausted.
       for (;;) {
@@ -204,8 +302,7 @@ export function generateSchedule(state: AppState): StudySession[] {
         }
 
         const minutes = Math.min(unit.minutes, remainingInWindow);
-        const session = makeSession(dateISO, cursor, { ...unit, minutes });
-        generated.push(session);
+        placed.push(makeSession(dateISO, cursor, { ...unit, minutes }));
 
         cursor += minutes;
         remainingInWindow -= minutes;
@@ -213,13 +310,16 @@ export function generateSchedule(state: AppState): StudySession[] {
         subjectWeekMinutes.set(unit.subjectId, (subjectWeekMinutes.get(unit.subjectId) ?? 0) + minutes);
         subjectDayCount.set(unit.subjectId, (subjectDayCount.get(unit.subjectId) ?? 0) + 1);
 
+        // Break time is still reserved while choosing, so the day can't be over-packed; where
+        // the breaks actually end up is regroupWindow's call, once the running order is known.
         const wantsBreak = minutes >= 35 && remainingInWindow >= MIN_SESSION_MINUTES + BREAK_MINUTES;
         if (wantsBreak && usedToday < MAX_DAILY_MINUTES) {
-          generated.push(makeBreak(dateISO, cursor, BREAK_MINUTES));
           cursor += BREAK_MINUTES;
           remainingInWindow -= BREAK_MINUTES;
         }
       }
+
+      generated.push(...regroupWindow(placed, win, dateISO, cursor));
     }
   }
 
