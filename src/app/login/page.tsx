@@ -18,7 +18,6 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -26,16 +25,24 @@ export default function LoginPage() {
     if (!supabase) return;
     setLoading(true);
     setError(null);
-    setMessage(null);
     try {
       if (mode === "signin") {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
         router.push("/");
       } else {
-        const { error } = await supabase.auth.signUp({ email, password });
+        const { data, error } = await supabase.auth.signUp({ email, password });
         if (error) throw error;
-        setMessage("Compte créé. Vérifie tes emails si une confirmation est requise, puis connecte-toi.");
+        // With "Confirm email" off on the Supabase project, signUp hands back a session straight
+        // away: the account is already open, so sending them back to the sign-in tab would be a
+        // pointless extra step. A missing session means the setting is still on.
+        if (data.session) {
+          router.push("/");
+          return;
+        }
+        setError(
+          "Compte créé, mais la confirmation par email est encore activée côté Supabase. Désactive-la dans Authentication → Sign In / Providers → Email, puis réessaie."
+        );
         setMode("signin");
       }
     } catch (err) {
@@ -105,7 +112,6 @@ export default function LoginPage() {
                   <Input type="password" required minLength={6} value={password} onChange={(e) => setPassword(e.target.value)} />
                 </div>
                 {error && <p className="text-xs text-danger">{error}</p>}
-                {message && <p className="text-xs text-success">{message}</p>}
                 <Button type="submit" className="w-full" disabled={loading}>
                   {mode === "signin" ? <LogIn size={15} /> : <UserPlus size={15} />}
                   {loading ? "Un instant…" : mode === "signin" ? "Se connecter" : "Créer un compte"}
