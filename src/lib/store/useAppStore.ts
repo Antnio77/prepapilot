@@ -117,8 +117,19 @@ interface Store extends AppState {
 
   runGeneration: () => void;
   resetDemoData: () => void;
+  /**
+   * Which account the locally-stored data belongs to, or null when it was never tied to one
+   * (used signed-out). localStorage is per-browser, not per-account, so without this a second
+   * account signing in on the same browser inherits — and, on a fresh account, uploads — the
+   * first one's work.
+   */
+  syncOwnerId: string | null;
   /** Overwrites all domain data with a snapshot pulled from Supabase (see supabase/sync.ts). */
-  hydrateFromRemote: (state: AppState) => void;
+  hydrateFromRemote: (state: AppState, userId: string) => void;
+  /** Marks the current local data as belonging to this account. */
+  claimLocalFor: (userId: string) => void;
+  /** Throws away local data belonging to someone else and starts this account blank. */
+  resetLocalFor: (userId: string) => void;
 }
 
 const emptyState = (): AppState => ({
@@ -305,9 +316,13 @@ export const useAppStore = create<Store>()(
         }),
 
       resetDemoData: () => set({ ...buildDemoData(), activeSessionId: null }),
+      syncOwnerId: null,
       // Normalized the same way a locally-rehydrated snapshot is (see `merge` below): a remote
       // profile can predate a field just as a saved local one can, and remote wins on sign-in.
-      hydrateFromRemote: (remote) => set({ ...remote, subjects: backfillDefaultSubjects(remote.subjects) }),
+      hydrateFromRemote: (remote, userId) =>
+        set({ ...remote, subjects: backfillDefaultSubjects(remote.subjects), syncOwnerId: userId }),
+      claimLocalFor: (userId) => set({ syncOwnerId: userId }),
+      resetLocalFor: (userId) => set({ ...buildDemoData(), activeSessionId: null, syncOwnerId: userId }),
     }),
     {
       name: "prepapilot-store-v1",
