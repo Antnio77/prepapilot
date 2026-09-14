@@ -1,5 +1,6 @@
 import type { Subject } from "@/types";
 import { DEFAULT_SUBJECTS } from "@/lib/subjects";
+import { uid } from "@/lib/utils";
 
 /**
  * Starting state for a brand-new profile: the canonical subject list (see DEFAULT_SUBJECTS)
@@ -9,7 +10,7 @@ import { DEFAULT_SUBJECTS } from "@/lib/subjects";
 export function buildDemoData() {
   const now = new Date().toISOString();
   const subjects: Subject[] = DEFAULT_SUBJECTS.map((s) => ({
-    id: s.id,
+    id: uid(),
     name: s.name,
     colorKey: s.key,
     maxSessionsPerDay: 3,

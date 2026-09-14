@@ -8,7 +8,38 @@ import { pullState, pushState } from "./sync";
 
 export type SyncStatus = "disabled" | "checking" | "signed-out" | "synced" | "error";
 
+export interface CloudSyncState {
+  status: SyncStatus;
+  /** Why sync failed, surfaced to the UI — a console-only log is no help on a phone. */
+  error: string | null;
+}
+
 const PUSH_DEBOUNCE_MS = 1500;
+
+/**
+ * Postgres codes that mean "these rows are not yours": a row-level-security refusal, or a
+ * primary-key collision with a row someone else already owns. Distinguished from every other
+ * failure because only these prove the local data belongs to another account — an offline
+ * moment or a missing table must never be taken as licence to throw local work away.
+ */
+const NOT_OURS_CODES = new Set(["42501", "23505"]);
+
+function isNotOursError(err: unknown): boolean {
+  return Boolean(err && typeof err === "object" && NOT_OURS_CODES.has((err as { code?: string }).code ?? ""));
+}
+
+/**
+ * Postgres errors arrive with the useful part spread over four fields — `message` alone often
+ * reads as a bare "relation does not exist" with no clue which table, so keep code/details/hint.
+ */
+function describeError(err: unknown): string {
+  if (err && typeof err === "object") {
+    const e = err as { message?: string; details?: string; hint?: string; code?: string };
+    const parts = [e.code ? `[${e.code}]` : null, e.message, e.details, e.hint].filter(Boolean);
+    if (parts.length > 0) return parts.join(" · ");
+  }
+  return String(err);
+}
 
 /**
  * Mirrors the local store to Supabase so the same account sees the same data on every
@@ -16,8 +47,9 @@ const PUSH_DEBOUNCE_MS = 1500;
  * brand-new account), then pushes a debounced full snapshot after any subsequent change.
  * No-ops entirely when Supabase isn't configured — the app stays local-only in that case.
  */
-export function useCloudSync(): SyncStatus {
+export function useCloudSync(): CloudSyncState {
   const [status, setStatus] = useState<SyncStatus>(isSupabaseConfigured ? "checking" : "disabled");
+  const [error, setError] = useState<string | null>(null);
   const hydrateFromRemote = useAppStore((s) => s.hydrateFromRemote);
   const claimLocalFor = useAppStore((s) => s.claimLocalFor);
   const resetLocalFor = useAppStore((s) => s.resetLocalFor);
@@ -51,10 +83,22 @@ export function useCloudSync(): SyncStatus {
             claimLocalFor(userId);
           }
           if (cancelled) return;
-          await pushState(supabase!, userId, useAppStore.getState());
+          try {
+            await pushState(supabase!, userId, useAppStore.getState());
+          } catch (seedErr) {
+            // The server refused these rows as another account's. That is proof this device's
+            // data isn't ours — whatever syncOwnerId happened to say — so start this account
+            // clean and seed that instead. Profiles created before ids were minted per user all
+            // carry the same subject ids, which is exactly how one lands here.
+            if (!isNotOursError(seedErr)) throw seedErr;
+            if (cancelled) return;
+            resetLocalFor(userId);
+            await pushState(supabase!, userId, useAppStore.getState());
+          }
         }
         if (cancelled) return;
         readyRef.current = true;
+        setError(null);
         setStatus("synced");
       } catch (err) {
         // A failed reconcile used to escape as an unhandled rejection, leaving the status on
@@ -69,6 +113,7 @@ export function useCloudSync(): SyncStatus {
         // Deliberately leaves readyRef false: with the remote state unknown, letting the
         // debounced push run would risk overwriting good remote data with a stale snapshot.
         readyRef.current = false;
+        setError(describeError(err));
         setStatus("error");
       }
     }
@@ -116,5 +161,5 @@ export function useCloudSync(): SyncStatus {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  return status;
+  return { status, error };
 }

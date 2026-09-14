@@ -43,7 +43,7 @@ function backfillDefaultSubjects(subjects: Subject[]): Subject[] {
   return [
     ...normalized,
     ...missing.map((s) => ({
-      id: s.id,
+      id: uid(),
       name: s.name,
       colorKey: s.key,
       maxSessionsPerDay: DEFAULT_MAX_SESSIONS_PER_DAY,

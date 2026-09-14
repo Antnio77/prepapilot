@@ -17,7 +17,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   // No-ops when Supabase isn't configured; otherwise pulls/pushes the account's data so
   // the same login sees the same plan on every device instead of being stuck per-browser.
-  const syncStatus = useCloudSync();
+  const { status: syncStatus, error: syncError } = useCloudSync();
 
   useEffect(() => {
     if (isSupabaseConfigured && syncStatus === "signed-out" && pathname !== "/login") {
@@ -53,9 +53,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           // The app is usable offline, so it stays open — but silently pretending the cloud is
           // fine would let changes pile up on one device and look synced when they aren't.
           <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8 pt-4">
-            <p className="rounded-xl border border-warning/30 bg-warning-soft px-4 py-2.5 text-[13px] text-warning">
-              Synchronisation indisponible — tes modifications restent sur cet appareil pour l&apos;instant.
-            </p>
+            <div className="rounded-xl border border-warning/30 bg-warning-soft px-4 py-2.5 text-[13px] text-warning">
+              <p>Synchronisation indisponible — tes modifications restent sur cet appareil pour l&apos;instant.</p>
+              {syncError && (
+                // The cause, not just the symptom: on a phone there's no console to go and read,
+                // and "which table is missing" is the whole answer to why sync won't start.
+                <details className="mt-1.5">
+                  <summary className="cursor-pointer text-[12px] opacity-80">Voir la cause</summary>
+                  <p className="mt-1.5 font-mono text-[11px] leading-relaxed break-words opacity-90">{syncError}</p>
+                </details>
+              )}
+            </div>
           </div>
         )}
         <main className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8 pb-24 md:pb-16 pt-6 md:pt-8">{children}</main>

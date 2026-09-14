@@ -26,15 +26,23 @@ export function subjectColorVar(key: SubjectColorKey): string {
  * and, in the store's persist `merge`, to backfill any of these a returning user's saved
  * profile doesn't have yet — e.g. Anglais/TIPE added after they'd already saved data).
  */
-export const DEFAULT_SUBJECTS: { id: string; key: SubjectColorKey; name: string; dailyReview: boolean }[] = [
-  { id: "subj-maths", key: "maths", name: "Maths", dailyReview: true },
-  { id: "subj-physique", key: "physique", name: "Physique", dailyReview: true },
-  { id: "subj-chimie", key: "chimie", name: "Chimie", dailyReview: false },
-  { id: "subj-si", key: "si", name: "SI", dailyReview: true },
-  { id: "subj-francais", key: "francais", name: "Français / Philosophie", dailyReview: false },
-  { id: "subj-anglais", key: "anglais", name: "Anglais", dailyReview: false },
-  { id: "subj-tipe", key: "tipe", name: "TIPE", dailyReview: false },
-  { id: "subj-autre", key: "autre", name: "Autre", dailyReview: false },
+/**
+ * No fixed ids here on purpose. These used to carry literal ids ("subj-maths" and friends), so
+ * every profile ever created seeded the very same primary keys — and `subjects.id` is a global
+ * key, not one scoped per user. The second account to sync then upserted onto rows the first
+ * account owned, and row-level security rightly refused: a 403 that broke sync for everyone but
+ * the first user. Ids are minted per profile instead; nothing matches on them (the backfill
+ * keys off `colorKey`), they were only ever a convenience.
+ */
+export const DEFAULT_SUBJECTS: { key: SubjectColorKey; name: string; dailyReview: boolean }[] = [
+  { key: "maths", name: "Maths", dailyReview: true },
+  { key: "physique", name: "Physique", dailyReview: true },
+  { key: "chimie", name: "Chimie", dailyReview: false },
+  { key: "si", name: "SI", dailyReview: true },
+  { key: "francais", name: "Français / Philosophie", dailyReview: false },
+  { key: "anglais", name: "Anglais", dailyReview: false },
+  { key: "tipe", name: "TIPE", dailyReview: false },
+  { key: "autre", name: "Autre", dailyReview: false },
 ];
 
 export const DEFAULT_SUBJECT_KEYS: SubjectColorKey[] = DEFAULT_SUBJECTS.map((s) => s.key);
