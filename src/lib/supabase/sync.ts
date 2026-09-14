@@ -7,6 +7,7 @@ import type {
   Chapter,
   CourseEvent,
   Exam,
+  Exercise,
   Grade,
   OralExam,
   StudySession,
@@ -266,6 +267,39 @@ const gradesSync: TableSync<Grade> = {
   }),
 };
 
+const exercisesSync: TableSync<Exercise> = {
+  table: "exercises",
+  toDb: (e, userId) => ({
+    id: e.id,
+    user_id: userId,
+    subject_id: e.subjectId,
+    chapter_id: e.chapterId,
+    statement: e.statement,
+    answer: e.answer,
+    interval_days: e.intervalDays,
+    ease: e.ease,
+    streak: e.streak,
+    review_count: e.reviewCount,
+    last_reviewed_at: e.lastReviewedAt,
+    due_date: e.dueDate,
+    created_at: e.createdAt,
+  }),
+  fromDb: (r) => ({
+    id: r.id as string,
+    subjectId: r.subject_id as string,
+    chapterId: (r.chapter_id as string | null) ?? null,
+    statement: r.statement as string,
+    answer: (r.answer as string | null) ?? "",
+    intervalDays: Number(r.interval_days ?? 0),
+    ease: Number(r.ease ?? 2.5),
+    streak: Number(r.streak ?? 0),
+    reviewCount: Number(r.review_count ?? 0),
+    lastReviewedAt: (r.last_reviewed_at as string | null) ?? null,
+    dueDate: r.due_date as string,
+    createdAt: r.created_at as string,
+  }),
+};
+
 async function syncTable<T extends { id: string }>(supabase: SupabaseClient, userId: string, cfg: TableSync<T>, rows: T[]) {
   const { data: existing, error: readErr } = await supabase.from(cfg.table).select("id").eq("user_id", userId);
   if (readErr) throw readErr;
@@ -295,6 +329,7 @@ export async function pushState(supabase: SupabaseClient, userId: string, state:
   await syncTable(supabase, userId, assignmentsSync, state.assignments);
   await syncTable(supabase, userId, studySessionsSync, state.studySessions);
   await syncTable(supabase, userId, gradesSync, state.grades);
+  await syncTable(supabase, userId, exercisesSync, state.exercises);
 }
 
 async function fetchTable<T extends { id: string }>(supabase: SupabaseClient, userId: string, cfg: TableSync<T>): Promise<T[]> {
@@ -306,7 +341,7 @@ async function fetchTable<T extends { id: string }>(supabase: SupabaseClient, us
 /** Pulls this user's full state down from Supabase. Returns null on any read failure. */
 export async function pullState(supabase: SupabaseClient, userId: string): Promise<AppState | null> {
   try {
-    const [subjects, chapters, courseEvents, availability, unavailablePeriods, exams, oralExams, assignments, studySessions, grades] =
+    const [subjects, chapters, courseEvents, availability, unavailablePeriods, exams, oralExams, assignments, studySessions, grades, exercises] =
       await Promise.all([
         fetchTable(supabase, userId, subjectsSync),
         fetchTable(supabase, userId, chaptersSync),
@@ -318,8 +353,9 @@ export async function pullState(supabase: SupabaseClient, userId: string): Promi
         fetchTable(supabase, userId, assignmentsSync),
         fetchTable(supabase, userId, studySessionsSync),
         fetchTable(supabase, userId, gradesSync),
+        fetchTable(supabase, userId, exercisesSync),
       ]);
-    return { subjects, chapters, courseEvents, availability, unavailablePeriods, exams, oralExams, assignments, studySessions, grades, lastGeneratedAt: null };
+    return { subjects, chapters, courseEvents, availability, unavailablePeriods, exams, oralExams, assignments, studySessions, grades, exercises, lastGeneratedAt: null };
   } catch {
     return null;
   }

@@ -112,6 +112,30 @@ export interface Grade {
   createdAt: string;
 }
 
+/** How well an exercise went, which is what sets the next review interval. */
+export type ExerciseRating = "rate" | "difficile" | "bien" | "facile";
+
+export interface Exercise {
+  id: string;
+  subjectId: string;
+  chapterId: string | null;
+  /** Énoncé. Plain text with LaTeX in $…$ (inline) or $$…$$ (block). */
+  statement: string;
+  /** Correction, same format. */
+  answer: string;
+  /** Days between the last review and the next — the forgetting-curve interval. */
+  intervalDays: number;
+  /** SM-2 ease factor: how fast the interval grows for this exercise. */
+  ease: number;
+  /** Consecutive non-failed reviews; back to 0 on a lapse. */
+  streak: number;
+  reviewCount: number;
+  lastReviewedAt: string | null; // ISO date
+  /** ISO date it next comes up. A brand-new exercise is due immediately. */
+  dueDate: string;
+  createdAt: string;
+}
+
 export type SessionType =
   | "cours"
   | "exercices"
@@ -162,5 +186,6 @@ export interface AppState {
   assignments: Assignment[];
   studySessions: StudySession[];
   grades: Grade[];
+  exercises: Exercise[];
   lastGeneratedAt: string | null;
 }

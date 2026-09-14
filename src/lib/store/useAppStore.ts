@@ -9,6 +9,8 @@ import type {
   Chapter,
   CourseEvent,
   Exam,
+  Exercise,
+  ExerciseRating,
   Grade,
   OralExam,
   SessionStatus,
@@ -19,6 +21,7 @@ import type {
 import { buildDemoData } from "@/lib/demoData";
 import { DEFAULT_SUBJECTS, defaultDailyReviewFor } from "@/lib/subjects";
 import { generateSchedule, rescheduleSession } from "@/lib/scheduling/generate";
+import { applyRating, MASTERY_DELTA, newExerciseSchedule } from "@/lib/exercises";
 import { uid, todayISO, clamp } from "@/lib/utils";
 
 const DEFAULT_MAX_SESSIONS_PER_DAY = 3;
@@ -97,6 +100,13 @@ interface Store extends AppState {
   updateGrade: (id: string, patch: Partial<Grade>) => void;
   deleteGrade: (id: string) => void;
 
+  // exercises
+  addExercise: (e: Pick<Exercise, "subjectId" | "chapterId" | "statement" | "answer">) => void;
+  updateExercise: (id: string, patch: Partial<Exercise>) => void;
+  deleteExercise: (id: string) => void;
+  /** Records how an exercise went: reschedules it on the forgetting curve and moves its chapter's mastery. */
+  rateExercise: (id: string, rating: ExerciseRating) => void;
+
   // study sessions
   addStudySession: (s: Omit<StudySession, "id" | "createdAt" | "actualMinutes" | "auto" | "status" | "priorityScore"> & Partial<Pick<StudySession, "status" | "priorityScore">>) => void;
   updateStudySession: (id: string, patch: Partial<StudySession>) => void;
@@ -122,6 +132,7 @@ const emptyState = (): AppState => ({
   assignments: [],
   studySessions: [],
   grades: [],
+  exercises: [],
   lastGeneratedAt: null,
 });
 
@@ -192,6 +203,30 @@ export const useAppStore = create<Store>()(
       updateGrade: (id, patch) =>
         set((state) => ({ grades: state.grades.map((g) => (g.id === id ? { ...g, ...patch } : g)) })),
       deleteGrade: (id) => set((state) => ({ grades: state.grades.filter((g) => g.id !== id) })),
+
+      addExercise: (e) =>
+        set((state) => ({
+          exercises: [
+            ...state.exercises,
+            { ...e, ...newExerciseSchedule(), id: uid(), createdAt: new Date().toISOString() },
+          ],
+        })),
+      updateExercise: (id, patch) =>
+        set((state) => ({ exercises: state.exercises.map((e) => (e.id === id ? { ...e, ...patch } : e)) })),
+      deleteExercise: (id) => set((state) => ({ exercises: state.exercises.filter((e) => e.id !== id) })),
+      rateExercise: (id, rating) =>
+        set((state) => {
+          const target = state.exercises.find((e) => e.id === id);
+          if (!target) return {};
+          const exercises = state.exercises.map((e) => (e.id === id ? { ...e, ...applyRating(e, rating) } : e));
+          // Drilling a chapter's exercises is evidence about that chapter, so it feeds the same
+          // mastery the planning generator reads — nail them and it schedules less time there.
+          if (!target.chapterId) return { exercises };
+          const chapters = state.chapters.map((c) =>
+            c.id === target.chapterId ? { ...c, mastery: clamp(c.mastery + MASTERY_DELTA[rating], 0, 100) } : c
+          );
+          return { exercises, chapters };
+        }),
 
       addStudySession: (s) =>
         set((state) => ({

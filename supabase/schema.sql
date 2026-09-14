@@ -168,6 +168,28 @@ alter table public.grades add column if not exists rank smallint;
 alter table public.grades add column if not exists class_average numeric;
 
 -- ---------------------------------------------------------------------------
+-- exercises (flashcard-style drills on a spaced-repetition schedule)
+-- ---------------------------------------------------------------------------
+create table if not exists public.exercises (
+  id text primary key,
+  user_id uuid not null references public.users (id) on delete cascade,
+  subject_id text not null references public.subjects (id) on delete cascade,
+  chapter_id text references public.chapters (id) on delete set null,
+  statement text not null,
+  answer text not null default '',
+  -- Forgetting-curve state, in the SM-2 sense: how far apart the reviews currently are,
+  -- how fast that gap grows for this exercise, and how many successes it has run up.
+  interval_days integer not null default 0,
+  ease numeric not null default 2.5,
+  streak integer not null default 0,
+  review_count integer not null default 0,
+  last_reviewed_at date,
+  due_date date not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- ---------------------------------------------------------------------------
 -- study_sessions (generated or manual work blocks)
 -- ---------------------------------------------------------------------------
 create table if not exists public.study_sessions (
@@ -212,6 +234,7 @@ create index if not exists exams_user_date_idx on public.exams (user_id, date);
 create index if not exists oral_exams_user_date_idx on public.oral_exams (user_id, date);
 create index if not exists assignments_user_due_idx on public.assignments (user_id, due_date);
 create index if not exists grades_user_subject_idx on public.grades (user_id, subject_id);
+create index if not exists exercises_user_due_idx on public.exercises (user_id, due_date);
 
 -- ---------------------------------------------------------------------------
 -- Row Level Security — every table is scoped to the authenticated owner
@@ -227,6 +250,7 @@ alter table public.oral_exams enable row level security;
 alter table public.assignments enable row level security;
 alter table public.study_sessions enable row level security;
 alter table public.grades enable row level security;
+alter table public.exercises enable row level security;
 
 drop policy if exists "Users manage their own row" on public.users;
 create policy "Users manage their own row" on public.users
@@ -239,7 +263,7 @@ begin
   for t in
     select unnest(array[
       'subjects', 'chapters', 'schedule_events', 'availability', 'unavailable_periods',
-      'exams', 'oral_exams', 'assignments', 'study_sessions', 'grades'
+      'exams', 'oral_exams', 'assignments', 'study_sessions', 'grades', 'exercises'
     ])
   loop
     execute format('drop policy if exists "Owner full access" on public.%I;', t);

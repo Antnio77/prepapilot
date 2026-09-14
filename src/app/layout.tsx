@@ -2,6 +2,9 @@ import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { AppShell } from "@/components/layout/AppShell";
 import "./globals.css";
+// KaTeX styles the markup it generates for exercise formulas; global by nature, so the root
+// layout is where the App Router wants it (app/getting-started/css: "Global CSS").
+import "katex/dist/katex.min.css";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",

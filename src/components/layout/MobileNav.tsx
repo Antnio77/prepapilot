@@ -19,12 +19,15 @@ export function MobileNav() {
               key={item.href}
               href={item.href}
               className={cn(
-                "flex flex-1 flex-col items-center justify-center gap-1 text-[11px] font-medium transition-colors",
+                // min-w-0 + truncate: six tabs leave each label about 60px on a narrow phone,
+                // which "Aujourd'hui" and "Progression" overrun — without this they bleed past
+                // their slot and get clipped mid-word by the screen edge.
+                "flex flex-1 min-w-0 flex-col items-center justify-center gap-1 px-0.5 text-[10px] font-medium transition-colors",
                 active ? "text-accent" : "text-muted-foreground"
               )}
             >
               <Icon size={20} strokeWidth={active ? 2.4 : 2} />
-              {item.label}
+              <span className="max-w-full truncate">{item.label}</span>
             </Link>
           );
         })}

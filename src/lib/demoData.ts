@@ -28,6 +28,7 @@ export function buildDemoData() {
     assignments: [],
     studySessions: [],
     grades: [],
+    exercises: [],
     lastGeneratedAt: null as string | null,
   };
 }
