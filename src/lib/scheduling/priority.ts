@@ -41,7 +41,7 @@ const DAILY_REVIEW_MIN_MINUTES = 20;
 const DAILY_REVIEW_MAX_MINUTES = 45;
 
 /**
- * "Relecture" units: before touching any deadline work, the evening opens by re-reading the
+ * "Relecture" units: once any deadline work due that day is placed, the evening re-reads the
  * courses actually attended that day, one block per subject that opted in (`subject.dailyReview`
  * — on by default for Maths/Physique/SI). Length is proportional to how long that subject was
  * taught that day, so a 4h maths day earns a longer re-read than a single hour, then clamped so

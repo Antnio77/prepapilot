@@ -116,11 +116,12 @@ function isEligible(unit: WorkUnit, dateISO: string): boolean {
 }
 
 /**
- * Deterministic scheduling algorithm. Each day opens with a re-read of that day's courses
- * (see buildDailyReviewUnits) before any deadline work. Then deadline-linked work (DS/colle/DM
- * prep) that specifically targets that day is placed — almost regardless of the daily/subject
- * caps below — so a colle's "veille" review session actually lands the day before it, not
- * wherever the raw priority score happened to win first. Once targeted work is placed, the
+ * Deterministic scheduling algorithm. Deadline-linked work (DS/colle/DM prep) that specifically
+ * targets a day is placed first — almost regardless of the daily/subject caps below — so a
+ * colle's "veille" review session actually lands the day before it, not wherever the raw
+ * priority score happened to win first. Next come that day's course re-reads (see
+ * buildDailyReviewUnits), which are a daily habit rather than a deadline and so yield to one.
+ * Once both are placed, the
  * remaining free time is filled greedily with the next-best eligible candidates (mostly spaced
  * repetition), capping subjects per day for variety and stopping well before a window is
  * completely full so the plan never feels crushing.
@@ -162,7 +163,7 @@ export function generateSchedule(state: AppState): StudySession[] {
     const targetFill = clamp(dayBudget * FILL_RATIO, 0, MAX_DAILY_MINUTES);
     let usedToday = 0;
     const subjectDayCount = new Map<string, number>();
-    // Consumed before anything else below, so the day starts by re-reading its own courses.
+    // Placed after any deadline work targeting this day, but ahead of the greedy fill.
     const dailyReview = buildDailyReviewUnits(state, dateISO);
     // Last in line: repeated to fill whatever is still empty when a colle is tomorrow.
     const colleSoak = buildColleSoakUnit(state, dateISO);
@@ -176,21 +177,23 @@ export function generateSchedule(state: AppState): StudySession[] {
         if (remainingInWindow < MIN_SESSION_MINUTES) break;
         if (usedToday >= MAX_DAILY_MINUTES) break;
 
-        // Same-day course re-reads come first — ahead of the daily-fill target and the
-        // per-subject cap, like targeted deadline work, since they only make sense today.
-        let unit = dailyReview.shift() ?? null;
+        // Deadline work reserved for exactly this day goes first. It bypasses the soft
+        // daily-fill target and the per-subject cap — it MUST land here to be useful at all —
+        // and it outranks the day's re-reads: a colle or a DS is time-critical in a way that
+        // re-reading today's courses is not. Behind the re-reads, a heavy course day's three
+        // relectures would swallow a short evening whole and leave the colle nothing.
+        const targetedIdx = pickTargetedCandidate(remaining, dateISO, remainingInWindow);
+        let unit: WorkUnit | null =
+          targetedIdx !== -1 ? remaining.splice(targetedIdx, 1)[0] : (dailyReview.shift() ?? null);
 
         if (!unit) {
-          // Deadline work reserved for exactly this day bypasses the soft daily-fill target and
-          // the per-subject cap: it MUST land here to actually be useful, even if that means two
-          // sessions of the same subject or slightly more work than a "typical" evening.
-          let candidateIdx = pickTargetedCandidate(remaining, dateISO, remainingInWindow);
-          if (candidateIdx === -1 && usedToday < targetFill) {
-            candidateIdx = pickBestCandidate(remaining, dateISO, remainingInWindow, subjectDayCount, subjectWeekMinutes, maxSessionsPerSubject);
-          }
+          const bestIdx =
+            usedToday < targetFill
+              ? pickBestCandidate(remaining, dateISO, remainingInWindow, subjectDayCount, subjectWeekMinutes, maxSessionsPerSubject)
+              : -1;
 
-          if (candidateIdx !== -1) {
-            unit = remaining.splice(candidateIdx, 1)[0];
+          if (bestIdx !== -1) {
+            unit = remaining.splice(bestIdx, 1)[0];
           } else if (colleSoak) {
             // Nothing left worth scheduling, but tomorrow is a colle: spend the rest of the
             // evening on it rather than stopping early and leaving the time blank.
