@@ -49,6 +49,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <ReminderEngine />
       <Sidebar />
       <div className="md:pl-64">
+        {syncStatus === "error" && (
+          // The app is usable offline, so it stays open — but silently pretending the cloud is
+          // fine would let changes pile up on one device and look synced when they aren't.
+          <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8 pt-4">
+            <p className="rounded-xl border border-warning/30 bg-warning-soft px-4 py-2.5 text-[13px] text-warning">
+              Synchronisation indisponible — tes modifications restent sur cet appareil pour l&apos;instant.
+            </p>
+          </div>
+        )}
         <main className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8 pb-24 md:pb-16 pt-6 md:pt-8">{children}</main>
       </div>
       <MobileNav />

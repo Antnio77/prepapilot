@@ -6,7 +6,7 @@ import { useAppStore } from "@/lib/store/useAppStore";
 import { getSupabaseBrowserClient, isSupabaseConfigured } from "./client";
 import { pullState, pushState } from "./sync";
 
-export type SyncStatus = "disabled" | "checking" | "signed-out" | "synced";
+export type SyncStatus = "disabled" | "checking" | "signed-out" | "synced" | "error";
 
 const PUSH_DEBOUNCE_MS = 1500;
 
@@ -31,16 +31,29 @@ export function useCloudSync(): SyncStatus {
     let cancelled = false;
 
     async function reconcile(userId: string) {
-      const remote = await pullState(supabase!, userId);
-      if (cancelled) return;
-      if (remote && remote.subjects.length > 0) {
-        hydrateFromRemote(remote);
-      } else {
-        await pushState(supabase!, userId, useAppStore.getState());
+      try {
+        const remote = await pullState(supabase!, userId);
+        if (cancelled) return;
+        if (remote && remote.subjects.length > 0) {
+          hydrateFromRemote(remote);
+        } else {
+          await pushState(supabase!, userId, useAppStore.getState());
+        }
+        if (cancelled) return;
+        readyRef.current = true;
+        setStatus("synced");
+      } catch (err) {
+        // A failed reconcile used to escape as an unhandled rejection, leaving the status on
+        // "checking" for ever — and since the app shell blocks on that, one rejected request
+        // (a table the schema hasn't created yet, an offline moment) locked the whole app
+        // behind its loading screen. Losing sync must never cost access to your own data.
+        if (cancelled) return;
+        console.error("[PrépaPilot] synchronisation impossible", err);
+        // Deliberately leaves readyRef false: with the remote state unknown, letting the
+        // debounced push run would risk overwriting good remote data with a stale snapshot.
+        readyRef.current = false;
+        setStatus("error");
       }
-      if (cancelled) return;
-      readyRef.current = true;
-      setStatus("synced");
     }
 
     function onAuthChange(userId: string | null) {
