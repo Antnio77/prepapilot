@@ -22,16 +22,10 @@ import { buildDemoData } from "@/lib/demoData";
 import { DEFAULT_SUBJECTS, defaultDailyReviewFor } from "@/lib/subjects";
 import { generateSchedule, rescheduleSession } from "@/lib/scheduling/generate";
 import { applyRating, MASTERY_DELTA, newExerciseSchedule } from "@/lib/exercises";
-import { addDays, uid, todayISO, clamp } from "@/lib/utils";
+import { uid, todayISO, clamp } from "@/lib/utils";
 
 const DEFAULT_MAX_SESSIONS_PER_DAY = 3;
 
-/**
- * How long a deadline outlives its own date before being deleted. One day, to match the grace
- * the Échéances list already grants (getUpcomingDeadlines keeps items back to d >= -1) — purging
- * on the stroke of midnight would empty a row the page still means to show.
- */
-const DEADLINE_GRACE_DAYS = 1;
 
 /**
  * Adds any canonical subject (e.g. Anglais/TIPE) a returning user's saved profile predates,
@@ -101,7 +95,7 @@ interface Store extends AppState {
   updateAssignment: (id: string, patch: Partial<Assignment>) => void;
   deleteAssignment: (id: string) => void;
   toggleAssignmentDone: (id: string) => void;
-  /** Drops DS, colles and DM whose date is behind us, so they stop accumulating for ever. */
+  /** Drops DS, colles and DM dated before today, so they stop accumulating for ever. */
   purgePastDeadlines: () => void;
 
   // grades
@@ -218,7 +212,9 @@ export const useAppStore = create<Store>()(
           assignments: state.assignments.map((a) => (a.id === id ? { ...a, done: !a.done } : a)),
         })),
       purgePastDeadlines: () => {
-        const cutoff = addDays(todayISO(), -DEADLINE_GRACE_DAYS);
+        // Today is the cutoff: once a day is over, everything dated that day goes. Nothing is
+        // held back a day, so the list never carries yesterday's DS around.
+        const cutoff = todayISO();
         const current = get();
         const exams = current.exams.filter((e) => e.date >= cutoff);
         const oralExams = current.oralExams.filter((o) => o.date >= cutoff);

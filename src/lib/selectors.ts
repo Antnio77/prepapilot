@@ -35,7 +35,10 @@ export function getUpcomingDeadlines(state: AppState, limit = 5, horizonDays = 3
   return items
     .filter((i) => {
       const d = daysBetween(today, i.date);
-      return d >= -1 && d <= horizonDays;
+      // From today onwards only. This used to reach back a day, which the purge now deletes
+      // anyway — and holding the line here means a session left open across midnight drops
+      // yesterday straight away, rather than showing it until the next reload sweeps it.
+      return d >= 0 && d <= horizonDays;
     })
     .sort((a, b) => (a.date === b.date ? b.importance - a.importance : a.date.localeCompare(b.date)))
     .slice(0, limit);
