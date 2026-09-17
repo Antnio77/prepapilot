@@ -22,9 +22,16 @@ import { buildDemoData } from "@/lib/demoData";
 import { DEFAULT_SUBJECTS, defaultDailyReviewFor } from "@/lib/subjects";
 import { generateSchedule, rescheduleSession } from "@/lib/scheduling/generate";
 import { applyRating, MASTERY_DELTA, newExerciseSchedule } from "@/lib/exercises";
-import { uid, todayISO, clamp } from "@/lib/utils";
+import { addDays, uid, todayISO, clamp } from "@/lib/utils";
 
 const DEFAULT_MAX_SESSIONS_PER_DAY = 3;
+
+/**
+ * How long a deadline outlives its own date before being deleted. One day, to match the grace
+ * the Échéances list already grants (getUpcomingDeadlines keeps items back to d >= -1) — purging
+ * on the stroke of midnight would empty a row the page still means to show.
+ */
+const DEADLINE_GRACE_DAYS = 1;
 
 /**
  * Adds any canonical subject (e.g. Anglais/TIPE) a returning user's saved profile predates,
@@ -94,6 +101,8 @@ interface Store extends AppState {
   updateAssignment: (id: string, patch: Partial<Assignment>) => void;
   deleteAssignment: (id: string) => void;
   toggleAssignmentDone: (id: string) => void;
+  /** Drops DS, colles and DM whose date is behind us, so they stop accumulating for ever. */
+  purgePastDeadlines: () => void;
 
   // grades
   addGrade: (g: Omit<Grade, "id" | "createdAt">) => void;
@@ -149,7 +158,7 @@ const emptyState = (): AppState => ({
 
 export const useAppStore = create<Store>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       ...emptyState(),
       hydrated: false,
       activeSessionId: null,
@@ -208,6 +217,25 @@ export const useAppStore = create<Store>()(
         set((state) => ({
           assignments: state.assignments.map((a) => (a.id === id ? { ...a, done: !a.done } : a)),
         })),
+      purgePastDeadlines: () => {
+        const cutoff = addDays(todayISO(), -DEADLINE_GRACE_DAYS);
+        const current = get();
+        const exams = current.exams.filter((e) => e.date >= cutoff);
+        const oralExams = current.oralExams.filter((o) => o.date >= cutoff);
+        const assignments = current.assignments.filter((a) => a.dueDate >= cutoff);
+
+        // Bail out before touching the store at all when nothing is stale. Returning {} from a
+        // set() would not do: zustand builds a fresh state object regardless and notifies its
+        // subscribers, and the cloud sync listens to those — every app load would push anew.
+        if (
+          exams.length === current.exams.length &&
+          oralExams.length === current.oralExams.length &&
+          assignments.length === current.assignments.length
+        ) {
+          return;
+        }
+        set({ exams, oralExams, assignments });
+      },
 
       addGrade: (g) =>
         set((state) => ({ grades: [...state.grades, { ...g, id: uid(), createdAt: new Date().toISOString() }] })),

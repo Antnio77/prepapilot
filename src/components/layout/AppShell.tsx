@@ -13,6 +13,7 @@ import { GraduationCap } from "lucide-react";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const hydrated = useAppStore((s) => s.hydrated);
+  const purgePastDeadlines = useAppStore((s) => s.purgePastDeadlines);
   const pathname = usePathname();
   const router = useRouter();
   // No-ops when Supabase isn't configured; otherwise pulls/pushes the account's data so
@@ -24,6 +25,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       router.replace("/login");
     }
   }, [syncStatus, pathname, router]);
+
+  // Sweep away deadlines whose date has gone by. Keyed on syncStatus as well as hydration so it
+  // runs again once a cloud pull has replaced the store — otherwise it would only ever tidy the
+  // local snapshot that the remote one then overwrites. The action no-ops when nothing is stale.
+  useEffect(() => {
+    if (!hydrated) return;
+    purgePastDeadlines();
+  }, [hydrated, syncStatus, purgePastDeadlines]);
 
   if (pathname === "/login") {
     return <div className="min-h-dvh bg-background">{children}</div>;
